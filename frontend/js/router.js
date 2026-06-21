@@ -37,7 +37,7 @@
     }
     const inputs = {};
     const card = el('div', { class: 'role-card' }, [
-      el('img', { class: 'role-logo', src: 'assets/icon.svg', alt: '' }),
+      el('img', { class: 'role-logo', src: 'assets/logo.png', alt: '' }),
       el('h1', { text: 'Diventa Trainer' }),
       el('p', { class: 'sub', text: `Invitato da ${sponsor.first_name} ${sponsor.last_name}. Compila per richiedere l'accesso: sarà attivato dall'amministratore.` }),
     ]);
@@ -78,7 +78,7 @@
     window.Theme.reset();
     clear(appRoot);
     const screen = el('div', { class: 'role-screen' }, el('div', { class: 'role-card' }, [
-      el('img', { class: 'role-logo', src: 'assets/icon.svg', alt: '' }),
+      el('img', { class: 'role-logo', src: 'assets/logo.png', alt: '' }),
       el('h1', { text: 'MyTeam' }),
       el('p', { class: 'sub', text: 'Piattaforma di gestione palestra — schede, nutrizione e progressi.' }),
       el('div', { class: 'role-grid' }, [
@@ -104,7 +104,7 @@
     clear(appRoot);
     const inputs = {};
     const card = el('div', { class: 'role-card' }, [
-      el('img', { class: 'role-logo', src: 'assets/icon.svg', alt: '' }),
+      el('img', { class: 'role-logo', src: 'assets/logo.png', alt: '' }),
       el('h1', { text: cfg.title }),
       cfg.subtitle ? el('p', { class: 'sub', text: cfg.subtitle }) : null,
     ]);

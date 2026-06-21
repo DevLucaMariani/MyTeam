@@ -67,7 +67,7 @@
       ? `${opts.trainer.first_name} ${opts.trainer.last_name}`
       : 'MyTeam';
     const brandLogo = (opts.role === 'trainer' && opts.trainer && opts.trainer.logo)
-      ? opts.trainer.logo : 'assets/icon.svg';
+      ? opts.trainer.logo : 'assets/logo.png';
     const sidebar = el('aside', { class: 'sidebar' }, [
       el('div', { class: 'brand' }, [
         el('img', { src: brandLogo, alt: '', style: 'width:32px;height:32px;object-fit:contain;border-radius:8px' }),
