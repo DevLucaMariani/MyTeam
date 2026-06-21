@@ -128,5 +128,35 @@
     return Array.isArray(ov) ? ov : (scheme.default || []);
   }
 
-  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek };
+  // Anno corrente per il copyright.
+  function year() { return new Date().getFullYear(); }
+
+  // Finestra "Credits" (richiamabile da ogni schermata).
+  function showCredits() {
+    const m = modal({
+      title: 'Credits',
+      body: el('div', { style: 'text-align:center' }, [
+        el('img', { src: 'assets/icon.svg', alt: '', style: 'width:52px;height:52px;margin-bottom:8px' }),
+        el('h3', { text: 'MyTeam', style: 'margin:0 0 4px' }),
+        el('p', { class: 'muted', text: 'Piattaforma di gestione palestra', style: 'margin:0 0 16px' }),
+        el('p', { html: 'Ideato e sviluppato da <strong>Luca Mariani</strong>', style: 'margin:0 0 6px' }),
+        el('p', { class: 'muted', text: `© ${year()} Luca Mariani — Tutti i diritti riservati.`, style: 'margin:0 0 14px' }),
+        el('div', {}, [
+          el('span', { class: 'muted', text: 'Per contatti: ' }),
+          el('a', { href: 'mailto:mariani.pwine@gmail.com', text: 'mariani.pwine@gmail.com' }),
+        ]),
+      ]),
+      footer: [el('button', { class: 'btn btn-primary btn-block', text: 'Chiudi', onClick: () => m.close() })],
+    });
+  }
+
+  // Riga di copyright cliccabile (apre i Credits).
+  function copyrightLine(extraClass) {
+    const a = el('a', { href: '#', text: 'Credits', onClick: (e) => { e.preventDefault(); showCredits(); } });
+    return el('p', { class: 'copyright' + (extraClass ? ' ' + extraClass : '') }, [
+      document.createTextNode(`© ${year()} Luca Mariani — Tutti i diritti riservati · `), a,
+    ]);
+  }
+
+  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year };
 })();

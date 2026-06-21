@@ -94,6 +94,7 @@
         ]),
       ]),
       el('p', { class: 'role-local-note', text: '🏃 Sei un cliente? Apri il link personale che ti ha inviato il tuo trainer.' }),
+      window.UI.copyrightLine(),
     ]));
     appRoot.appendChild(screen);
   }

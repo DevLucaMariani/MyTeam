@@ -78,6 +78,8 @@
       el('div', { class: 'spacer' }),
       el('button', { class: 'nav-item exit', onClick: () => window.Router.goRole(),
         }, [el('span', { class: 'ico', text: '↩' }), el('span', { text: 'Esci' })]),
+      el('button', { class: 'nav-item', style: 'opacity:.65; font-size:12px', onClick: () => window.UI.showCredits(),
+        }, [el('span', { class: 'ico', text: 'ⓘ' }), el('span', { text: 'Credits' })]),
     ]);
 
     const content = el('main', { class: 'content', id: 'admin-content' });

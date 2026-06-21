@@ -177,6 +177,7 @@
     ]));
 
     if (trainer) b.appendChild(trainerCard());
+    b.appendChild(window.UI.copyrightLine());
   }
 
   function noPlan() {
