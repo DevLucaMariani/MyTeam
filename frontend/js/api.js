@@ -44,6 +44,14 @@
     createTrainer: (data) => request('POST', '/trainers', data),
     updateTrainer: (id, data) => request('PUT', `/trainers/${id}`, data),
     deleteTrainer: (id) => request('DELETE', `/trainers/${id}`),
+    approveTrainer: (id) => request('POST', `/trainers/${id}/approve`),
+    setTrainerCommission: (id, override) => request('PUT', `/trainers/${id}/commission`, { override }),
+
+    // Sponsorizzazioni / compensi
+    registerTrainer: (data) => request('POST', '/trainers/register', data),
+    getInvite: (code) => request('GET', `/invite/${code}`),
+    listBilling: () => request('GET', '/billing'),
+    getMe: () => request('GET', '/me'),
 
     // Aspetto del trainer (logo + tema), applicato a console e clienti
     updateMyBranding: (data) => request('PUT', '/me/branding', data),

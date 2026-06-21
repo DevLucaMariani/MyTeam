@@ -14,7 +14,55 @@
     // Link di accesso del trainer: ?t=<token>  -> entra nella console del trainer.
     const trainerToken = params.get('t');
     if (trainerToken) { loginTrainerByToken(trainerToken); return; }
+    // Invito a diventare trainer: ?invite=<codice>
+    const invite = params.get('invite');
+    if (invite) { showRegister(invite); return; }
     goRole();
+  }
+
+  function goHome() { window.history.replaceState({}, '', '/'); goRole(); }
+
+  async function showRegister(code) {
+    window.Theme.reset();
+    clear(appRoot);
+    let sponsor = null;
+    try { sponsor = await window.API.getInvite(code); } catch (e) { sponsor = null; }
+    if (!sponsor) {
+      appRoot.appendChild(el('div', { class: 'role-screen' }, el('div', { class: 'role-card' }, [
+        el('h1', { text: 'Invito non valido' }),
+        el('p', { class: 'sub', text: 'Questo link di invito non è valido o è scaduto.' }),
+        el('button', { class: 'btn btn-block', text: 'Vai alla home', onClick: () => goHome() }),
+      ])));
+      return;
+    }
+    const inputs = {};
+    const card = el('div', { class: 'role-card' }, [
+      el('img', { class: 'role-logo', src: 'assets/icon.svg', alt: '' }),
+      el('h1', { text: 'Diventa Trainer' }),
+      el('p', { class: 'sub', text: `Invitato da ${sponsor.first_name} ${sponsor.last_name}. Compila per richiedere l'accesso: sarà attivato dall'amministratore.` }),
+    ]);
+    [['first_name', 'Nome'], ['last_name', 'Cognome'], ['email', 'Email'], ['phone', 'Telefono'],
+      ['username', 'Nome utente'], ['password', 'Password', 'password']].forEach(([name, label, type]) => {
+      const inp = el('input', { type: type || 'text' });
+      inputs[name] = inp;
+      card.appendChild(el('div', { class: 'field' }, [el('label', { text: label }), inp]));
+    });
+    card.appendChild(el('button', { class: 'btn btn-primary btn-block', text: 'Richiedi accesso', style: 'margin-top:8px', onClick: async () => {
+      const data = { invite_code: code };
+      Object.keys(inputs).forEach((k) => { data[k] = inputs[k].value; });
+      if (!data.first_name || !data.last_name || !data.username || !data.password) { toast('Compila nome, cognome, utente e password', 'err'); return; }
+      try {
+        await window.API.registerTrainer(data);
+        clear(appRoot);
+        appRoot.appendChild(el('div', { class: 'role-screen' }, el('div', { class: 'role-card' }, [
+          el('div', { class: 'ico', text: '✅', style: 'font-size:42px' }),
+          el('h1', { text: 'Richiesta inviata!' }),
+          el('p', { class: 'sub', text: "Il tuo account è in attesa di approvazione dall'amministratore. Appena approvato potrai accedere come Trainer." }),
+          el('button', { class: 'btn btn-block', text: 'Vai alla home', onClick: () => goHome() }),
+        ])));
+      } catch (err) { toast(err.message || 'Registrazione non riuscita', 'err'); }
+    } }));
+    appRoot.appendChild(el('div', { class: 'role-screen' }, card));
   }
 
   async function loginTrainerByToken(token) {

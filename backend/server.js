@@ -384,8 +384,8 @@ api.put('/plans/:id', requireStaff, wrap(async (req, res) => {
     }
 
     await conn.query(
-      'UPDATE plans SET name=?, duration_weeks=?, version=?, start_date=?, end_date=? WHERE id=?',
-      [body.name, Number(body.duration_weeks) || 8, version, body.start_date || null, body.end_date || null, planId]
+      'UPDATE plans SET name=?, duration_weeks=?, version=?, start_date=?, end_date=?, price=? WHERE id=?',
+      [body.name, Number(body.duration_weeks) || 8, version, body.start_date || null, body.end_date || null, priceVal(body.price), planId]
     );
 
     // Riscrive struttura e nutrizione.
@@ -427,6 +427,7 @@ api.post('/plans/:id/duplicate', requireStaff, wrap(async (req, res) => {
     name: req.body.name || `${src.name} (copia)`,
     duration_weeks: src.duration_weeks,
     status: 'bozza',
+    price: src.price,
     days: src.days.map((d) => ({
       name: d.name,
       exercises: d.exercises.map((e) => ({
@@ -440,12 +441,19 @@ api.post('/plans/:id/duplicate', requireStaff, wrap(async (req, res) => {
   res.status(201).json(await loadFullPlan(newId));
 }));
 
+// Normalizza il prezzo della scheda: numero >= 0 oppure null.
+function priceVal(v) {
+  if (v === '' || v == null) return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+}
+
 // Inserisce un piano completo (usato da create e duplicate).
 async function insertPlanGraph(conn, body) {
   const [r] = await conn.query(
-    'INSERT INTO plans (customer_id, name, duration_weeks, status, version, start_date, end_date) VALUES (?,?,?,?,1,?,?)',
+    'INSERT INTO plans (customer_id, name, duration_weeks, status, version, start_date, end_date, price) VALUES (?,?,?,?,1,?,?,?)',
     [body.customer_id, body.name, Number(body.duration_weeks) || 8, body.status || 'bozza',
-      body.start_date || null, body.end_date || null]
+      body.start_date || null, body.end_date || null, priceVal(body.price)]
   );
   const planId = r.insertId;
   await writeDaysAndNutrition(conn, planId, body);
@@ -645,6 +653,35 @@ api.delete('/photos/:id', requireClientOrStaff, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---- Registrazione trainer tramite sponsorizzazione (pubblici) -----------
+api.get('/invite/:code', wrap(async (req, res) => {
+  const [t] = await db.q('SELECT first_name, last_name FROM trainers WHERE invite_code=? AND active=1', [req.params.code]);
+  if (!t) return res.status(404).json({ error: 'Invito non valido.' });
+  res.json({ first_name: t.first_name, last_name: t.last_name });
+}));
+
+api.post('/trainers/register', wrap(async (req, res) => {
+  const code = (req.body.invite_code || '').trim();
+  const [sponsor] = await db.q('SELECT id FROM trainers WHERE invite_code=? AND active=1', [code]);
+  if (!sponsor) return res.status(400).json({ error: 'Codice invito non valido.' });
+  const username = (req.body.username || '').trim();
+  const password = req.body.password || '';
+  if (!req.body.first_name || !req.body.last_name) return res.status(400).json({ error: 'Nome e cognome obbligatori.' });
+  if (!username || !password) return res.status(400).json({ error: 'Nome utente e password obbligatori.' });
+  try {
+    await db.q(
+      `INSERT INTO trainers (first_name, last_name, email, phone, username, password_hash, console_token, invite_code, sponsor_id, active)
+       VALUES (?,?,?,?,?,?,?,?,?,0)`,
+      [req.body.first_name, req.body.last_name, req.body.email || null, req.body.phone || null,
+        username, auth.hashPassword(password), auth.randomToken(), auth.randomToken(8), sponsor.id]
+    );
+    res.status(201).json({ ok: true, pending: true });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: "Nome utente gia' in uso." });
+    throw err;
+  }
+}));
+
 // ---- Trainer (gestiti dall'amministratore) -------------------------------
 // Nota: logo e tema NON sono qui: li gestisce il trainer da sé (/me/branding),
 // cosi' un salvataggio del profilo lato admin non li azzera.
@@ -658,15 +695,57 @@ function trainerPublic(t) {
     console_token: t.console_token, // serve all'admin per generare il link di accesso
     logo: t.logo, theme_accent: t.theme_accent, theme_mode: t.theme_mode,
     theme_bg: t.theme_bg, theme_surface: t.theme_surface,
+    sponsor_id: t.sponsor_id, invite_code: t.invite_code, commission_override: t.commission_override,
+  };
+}
+
+// Tasso effettivo: override admin (10/5/0) se impostato, altrimenti automatico
+// (10%, oppure 5% se il trainer ha portato >= 3 trainer sponsorizzati e attivi).
+function effectiveRate(t, sponsoredCount) {
+  const ov = t.commission_override;
+  if (ov === 0 || ov === 5 || ov === 10) return ov;
+  return sponsoredCount >= 3 ? 5 : 10;
+}
+
+// Riepilogo compensi di un trainer: primi 2 clienti gratis, dal terzo si paga
+// il tasso percentuale sul prezzo di ogni scheda.
+async function trainerBilling(t) {
+  const FREE = 2;
+  const clients = await db.q('SELECT id FROM customers WHERE trainer_id=? ORDER BY created_at, id', [t.id]);
+  const billableIds = clients.slice(FREE).map((c) => c.id);
+  const [sp] = await db.q('SELECT COUNT(*) AS n FROM trainers WHERE sponsor_id=? AND active=1', [t.id]);
+  const sponsoredCount = Number(sp.n) || 0;
+  const rate = effectiveRate(t, sponsoredCount);
+  let billablePlans = 0;
+  let revenue = 0;
+  if (billableIds.length) {
+    const [agg] = await db.q(
+      'SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS tot FROM plans WHERE price > 0 AND customer_id IN (?)',
+      [billableIds]
+    );
+    billablePlans = Number(agg.n) || 0;
+    revenue = Number(agg.tot) || 0;
+  }
+  return {
+    clients_count: clients.length, free_clients: FREE, sponsored_count: sponsoredCount,
+    rate, billable_plans: billablePlans, billable_revenue: revenue,
+    owed: Math.round(revenue * rate) / 100,
   };
 }
 
 api.get('/trainers', requireAdmin, wrap(async (_req, res) => {
   const rows = await db.q(
-    `SELECT t.*, (SELECT COUNT(*) FROM customers c WHERE c.trainer_id = t.id) AS customers_count
-     FROM trainers t ORDER BY t.last_name, t.first_name`
+    `SELECT t.*,
+            (SELECT COUNT(*) FROM customers c WHERE c.trainer_id = t.id) AS customers_count,
+            (SELECT COUNT(*) FROM trainers s WHERE s.sponsor_id = t.id AND s.active=1) AS sponsored_count
+     FROM trainers t ORDER BY t.active ASC, t.last_name, t.first_name`
   );
-  res.json(rows.map((t) => ({ ...trainerPublic(t), customers_count: t.customers_count })));
+  res.json(rows.map((t) => ({
+    ...trainerPublic(t),
+    customers_count: t.customers_count,
+    sponsored_count: Number(t.sponsored_count) || 0,
+    rate: effectiveRate(t, Number(t.sponsored_count) || 0),
+  })));
 }));
 
 api.post('/trainers', requireAdmin, wrap(async (req, res) => {
@@ -678,7 +757,8 @@ api.post('/trainers', requireAdmin, wrap(async (req, res) => {
   data.username = username;
   data.password_hash = auth.hashPassword(password);
   data.console_token = auth.randomToken();
-  const cols = [...TRAINER_FIELDS, 'username', 'password_hash', 'console_token'];
+  data.invite_code = auth.randomToken(8);
+  const cols = [...TRAINER_FIELDS, 'username', 'password_hash', 'console_token', 'invite_code'];
   const ph = cols.map((f) => `:${f}`).join(',');
   try {
     const r = await db.q(`INSERT INTO trainers (${cols.join(',')}) VALUES (${ph})`, data);
@@ -705,8 +785,49 @@ api.put('/trainers/:id', requireAdmin, wrap(async (req, res) => {
 api.delete('/trainers/:id', requireAdmin, wrap(async (req, res) => {
   // I clienti restano: si stacca solo il collegamento al trainer.
   await db.q('UPDATE customers SET trainer_id=NULL WHERE trainer_id=?', [req.params.id]);
+  // Stacca anche eventuali trainer sponsorizzati da questo.
+  await db.q('UPDATE trainers SET sponsor_id=NULL WHERE sponsor_id=?', [req.params.id]);
   await db.q('DELETE FROM trainers WHERE id=?', [req.params.id]);
   res.json({ ok: true });
+}));
+
+// Approva un trainer in attesa (registrato via invito).
+api.post('/trainers/:id/approve', requireAdmin, wrap(async (req, res) => {
+  await db.q('UPDATE trainers SET active=1 WHERE id=?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// Imposta il tasso forzato (10/5/0) o lo rimette in automatico (null).
+api.put('/trainers/:id/commission', requireAdmin, wrap(async (req, res) => {
+  let ov = req.body.override;
+  ov = (ov === null || ov === '' || ov === 'auto' || ov === undefined) ? null : Number(ov);
+  if (ov !== null && ![0, 5, 10].includes(ov)) return res.status(400).json({ error: 'Tasso non valido.' });
+  await db.q('UPDATE trainers SET commission_override=? WHERE id=?', [ov, req.params.id]);
+  res.json({ ok: true });
+}));
+
+// Riepilogo compensi di tutti i trainer attivi (per l'amministratore).
+api.get('/billing', requireAdmin, wrap(async (_req, res) => {
+  const trainers = await db.q('SELECT * FROM trainers WHERE active=1 ORDER BY last_name, first_name');
+  const out = [];
+  for (const t of trainers) {
+    const b = await trainerBilling(t);
+    out.push({ id: t.id, first_name: t.first_name, last_name: t.last_name, commission_override: t.commission_override, ...b });
+  }
+  res.json(out);
+}));
+
+// Stato del trainer corrente: codice invito, tasso e compensi maturati.
+api.get('/me', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role !== 'trainer') return res.json({ role: 'admin' });
+  const [t] = await db.q('SELECT * FROM trainers WHERE id=?', [req.ctx.trainerId]);
+  if (!t.invite_code) {
+    const code = auth.randomToken(8);
+    await db.q('UPDATE trainers SET invite_code=? WHERE id=?', [code, t.id]);
+    t.invite_code = code;
+  }
+  const b = await trainerBilling(t);
+  res.json({ role: 'trainer', id: t.id, first_name: t.first_name, last_name: t.last_name, invite_code: t.invite_code, ...b });
 }));
 
 // Il trainer aggiorna il proprio aspetto (logo + tema della console e dei clienti).

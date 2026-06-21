@@ -56,6 +56,15 @@ ALTER TABLE trainers ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(10);
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS theme_bg VARCHAR(20);
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS theme_surface VARCHAR(20);
 
+-- Sponsorizzazioni e compensi.
+-- sponsor_id: trainer che ha sponsorizzato questo trainer (NULL se creato dall'admin).
+-- invite_code: codice/link invito personale del trainer.
+-- commission_override: tasso forzato dall'admin (10/5/0); NULL = automatico.
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS sponsor_id INT;
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS invite_code VARCHAR(40);
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS commission_override TINYINT;
+ALTER TABLE trainers ADD UNIQUE INDEX uq_trainer_invite (invite_code);
+
 -- Collega ogni cliente al proprio trainer e dagli un token personale per il
 -- link PWA (link permanente: si invia una volta, i contenuti si aggiornano).
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS trainer_id INT;
@@ -78,6 +87,8 @@ CREATE TABLE IF NOT EXISTS plans (
 
 ALTER TABLE plans ADD COLUMN IF NOT EXISTS start_date DATE;
 ALTER TABLE plans ADD COLUMN IF NOT EXISTS end_date DATE;
+-- Prezzo della scheda (inserito dal trainer): base di calcolo dei compensi.
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS price DECIMAL(10,2);
 
 -- Catalogo esercizi: elenco riusabile da cui l'amministratore puo' scegliere
 -- (oppure scrivere liberamente un nome non in elenco).

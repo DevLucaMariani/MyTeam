@@ -32,8 +32,13 @@
       { view: 'exercises', ico: '🏋️', label: 'Esercizi' },
       { view: 'notifications', ico: '🔔', label: 'Notifiche' },
     ];
-    // Solo l'amministratore gestisce i trainer.
-    if (opts.role === 'admin') items.splice(1, 0, { view: 'trainers', ico: '🧑‍🏫', label: 'Trainer' });
+    // Solo l'amministratore gestisce i trainer e i compensi.
+    if (opts.role === 'admin') {
+      items.splice(1, 0, { view: 'trainers', ico: '🧑‍🏫', label: 'Trainer' });
+      items.push({ view: 'billing', ico: '💶', label: 'Compensi' });
+    }
+    // Il trainer può invitare altri trainer (sponsorizzazione).
+    if (opts.role === 'trainer') items.push({ view: 'invite', ico: '➕', label: 'Invita trainer' });
     items.push({ view: 'appearance', ico: '🎨', label: 'Aspetto' });
     return items;
   }
@@ -87,6 +92,8 @@
       notifications: renderNotifications,
       trainers: renderTrainers,
       appearance: renderAppearance,
+      billing: renderBilling,
+      invite: renderInvite,
     };
     (views[state.view] || renderDashboard)(content);
     updateNotifBadge();
@@ -176,27 +183,46 @@
       if (!trainers.length) {
         card.appendChild(emptyState('Nessun trainer', 'Crea il primo trainer e consegnagli nome utente e password.'));
       } else {
-        const rows = trainers.map((t) => el('tr', {}, [
-          el('td', {}, el('div', { class: 'cell-name' }, [
-            t.photo ? el('img', { src: t.photo, alt: '', style: 'width:36px;height:36px;border-radius:50%;object-fit:cover' }) : el('span', { class: 'avatar', text: initials(t.first_name, t.last_name) }),
-            el('div', {}, [
-              el('div', { text: `${t.first_name} ${t.last_name}`, style: 'font-weight:600' }),
-              el('div', { class: 'muted', text: '@' + t.username, style: 'font-size:12px' }),
-            ]),
-          ])),
-          el('td', { text: t.phone || '—' }),
-          el('td', { text: String(t.customers_count || 0) + ' clienti' }),
-          el('td', { style: 'text-align:right; white-space:nowrap' }, [
-            el('button', { class: 'btn btn-sm btn-accent', html: '🔗 Invia accesso', onClick: () => openTrainerAccess(t) }),
-            el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openTrainerForm(t) }),
-            el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
-              confirmDialog(`Eliminare il trainer ${t.first_name} ${t.last_name}? I suoi clienti restano, ma senza trainer assegnato.`, async () => {
-                try { await API.deleteTrainer(t.id); toast('Trainer eliminato', 'ok'); navigate('trainers'); }
+        const rows = trainers.map((t) => {
+          const pending = !Number(t.active);
+          const actions = pending
+            ? [
+              el('button', { class: 'btn btn-sm btn-accent', text: '✓ Approva', onClick: async () => {
+                try { await API.approveTrainer(t.id); toast('Trainer approvato', 'ok'); navigate('trainers'); }
                 catch (err) { toast(err.message, 'err'); }
-              }, { danger: true, confirmLabel: 'Elimina' });
-            } }),
-          ]),
-        ]));
+              } }),
+              el('button', { class: 'btn btn-sm btn-danger', text: 'Rifiuta', onClick: () => {
+                confirmDialog(`Rifiutare ed eliminare la richiesta di ${t.first_name} ${t.last_name}?`, async () => {
+                  try { await API.deleteTrainer(t.id); navigate('trainers'); } catch (err) { toast(err.message, 'err'); }
+                }, { danger: true, confirmLabel: 'Rifiuta' });
+              } }),
+            ]
+            : [
+              el('button', { class: 'btn btn-sm btn-accent', html: '🔗 Invia accesso', onClick: () => openTrainerAccess(t) }),
+              el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openTrainerForm(t) }),
+              el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
+                confirmDialog(`Eliminare il trainer ${t.first_name} ${t.last_name}? I suoi clienti restano, ma senza trainer assegnato.`, async () => {
+                  try { await API.deleteTrainer(t.id); toast('Trainer eliminato', 'ok'); navigate('trainers'); }
+                  catch (err) { toast(err.message, 'err'); }
+                }, { danger: true, confirmLabel: 'Elimina' });
+              } }),
+            ];
+          return el('tr', pending ? { style: 'background:var(--surface-2)' } : {}, [
+            el('td', {}, el('div', { class: 'cell-name' }, [
+              t.photo ? el('img', { src: t.photo, alt: '', style: 'width:36px;height:36px;border-radius:50%;object-fit:cover' }) : el('span', { class: 'avatar', text: initials(t.first_name, t.last_name) }),
+              el('div', {}, [
+                el('div', {}, [
+                  el('span', { text: `${t.first_name} ${t.last_name}`, style: 'font-weight:600' }),
+                  pending ? el('span', { class: 'badge badge-bozza', text: 'In attesa', style: 'margin-left:8px' }) : null,
+                ]),
+                el('div', { class: 'muted', text: '@' + t.username + (t.sponsor_id ? ' · sponsorizzato' : ''), style: 'font-size:12px' }),
+              ]),
+            ])),
+            el('td', { text: t.phone || '—' }),
+            el('td', { text: pending ? '—' : `${t.customers_count || 0} clienti · ${t.rate}%` }),
+            el('td', { style: 'text-align:right; white-space:nowrap' }, actions),
+          ]);
+        });
         card.appendChild(el('table', { class: 'table' }, [
           el('thead', {}, el('tr', {}, ['Trainer', 'Telefono', 'Clienti', ''].map((h) => el('th', { text: h })))),
           el('tbody', {}, rows),
@@ -279,6 +305,93 @@
         el('a', { class: 'btn btn-accent', href: wa, target: '_blank', html: '🟢 Invia su WhatsApp' }),
       ],
     });
+  }
+
+  // ---- Compensi (solo amministratore) -------------------------------------
+  async function renderBilling(c) {
+    c.appendChild(topbar('Compensi', 'Primi 2 clienti gratis per trainer; dal 3° si applica il tasso'));
+    loading(c);
+    try {
+      const rows = await API.listBilling();
+      clear(c);
+      const total = rows.reduce((s, r) => s + Number(r.owed || 0), 0);
+      c.appendChild(topbar('Compensi', `Totale maturato: ${fmtEuro(total) || '€ 0,00'}`));
+      const card = el('div', { class: 'card' });
+      if (!rows.length) {
+        card.appendChild(emptyState('Nessun trainer attivo', 'Approva o crea un trainer per vedere i compensi.'));
+      } else {
+        const trs = rows.map((r) => {
+          const cur = (r.commission_override == null) ? 'auto' : String(r.commission_override);
+          const sel = el('select', {}, [
+            { v: 'auto', l: `Automatico (${r.sponsored_count >= 3 ? '5' : '10'}%)` },
+            { v: '10', l: '10%' }, { v: '5', l: '5%' }, { v: '0', l: '0%' },
+          ].map((o) => {
+            const opt = el('option', { value: o.v, text: o.l });
+            if (o.v === cur) opt.selected = true;
+            return opt;
+          }));
+          sel.addEventListener('change', async () => {
+            try { await API.setTrainerCommission(r.id, sel.value === 'auto' ? null : Number(sel.value)); toast('Tasso aggiornato', 'ok'); navigate('billing'); }
+            catch (err) { toast(err.message, 'err'); }
+          });
+          return el('tr', {}, [
+            el('td', { text: `${r.first_name} ${r.last_name}`, style: 'font-weight:600' }),
+            el('td', { text: `${r.clients_count} (${Math.max(0, r.clients_count - r.free_clients)} a pagamento)` }),
+            el('td', { text: String(r.sponsored_count) }),
+            el('td', {}, sel),
+            el('td', { text: String(r.billable_plans) }),
+            el('td', { text: fmtEuro(r.billable_revenue) || '€ 0,00' }),
+            el('td', { text: fmtEuro(r.owed) || '€ 0,00', style: 'font-weight:700' }),
+          ]);
+        });
+        card.appendChild(el('table', { class: 'table' }, [
+          el('thead', {}, el('tr', {}, ['Trainer', 'Clienti', 'Portati', 'Tasso', 'Schede pag.', 'Imponibile', 'Compenso'].map((h) => el('th', { text: h })))),
+          el('tbody', {}, trs),
+        ]));
+      }
+      c.appendChild(card);
+      c.appendChild(el('p', { class: 'muted', style: 'margin-top:12px; font-size:13px',
+        text: 'Il compenso è la percentuale sul prezzo delle schede dei clienti oltre i primi 2 (gratuiti). Il tasso scende a 5% in automatico quando un trainer porta 3 trainer sponsorizzati e attivi; puoi comunque forzarlo qui.' }));
+    } catch (err) { showError(c, err); }
+  }
+
+  // ---- Invita un trainer (solo trainer) -----------------------------------
+  async function renderInvite(c) {
+    c.appendChild(topbar('Invita un trainer', 'Porta altri trainer e abbassa il tuo tasso'));
+    loading(c);
+    try {
+      const me = await API.getMe();
+      clear(c);
+      c.appendChild(topbar('Invita un trainer', `Tuo tasso attuale: ${me.rate}%`));
+      const link = `${window.location.origin}/?invite=${me.invite_code}`;
+      const msg = `Ciao! Unisciti a MyTeam come trainer con il mio invito: ${link}`;
+      const wa = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      const linkInput = el('input', { value: link, readonly: true, style: 'font-size:13px' });
+      linkInput.addEventListener('click', () => linkInput.select());
+      c.appendChild(el('div', { class: 'card' }, [
+        el('h3', { text: '🔗 Il tuo link di invito' }),
+        el('p', { class: 'muted', text: "Chi si registra con questo link diventa un trainer in attesa di approvazione dell'amministratore. Con 3 trainer attivi portati da te, il tuo tasso scende dal 10% al 5%." }),
+        el('div', { class: 'field' }, [linkInput]),
+        el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap' }, [
+          el('button', { class: 'btn', html: '📋 Copia link', onClick: () => {
+            if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => toast('Link copiato', 'ok'), () => toast('Copia non riuscita', 'err'));
+            else { linkInput.select(); document.execCommand('copy'); toast('Link copiato', 'ok'); }
+          } }),
+          el('a', { class: 'btn btn-accent', href: wa, target: '_blank', html: '🟢 Condividi su WhatsApp' }),
+        ]),
+      ]));
+      c.appendChild(el('div', { class: 'card' }, [
+        el('h3', { text: 'Il tuo riepilogo' }),
+        el('div', { class: 'grid-3' }, [
+          infoLine('Trainer portati (attivi)', String(me.sponsored_count)),
+          infoLine('Clienti', `${me.clients_count} (primi ${me.free_clients} gratis)`),
+          infoLine('Tasso attuale', me.rate + '%'),
+          infoLine('Schede a pagamento', String(me.billable_plans)),
+          infoLine('Imponibile', fmtEuro(me.billable_revenue) || '€ 0,00'),
+          infoLine('Compenso maturato', fmtEuro(me.owed) || '€ 0,00'),
+        ]),
+      ]));
+    } catch (err) { showError(c, err); }
   }
 
   // ---- Aspetto (tema + logo) ----------------------------------------------
@@ -811,7 +924,7 @@
       plan = await API.getPlan(planId);
     } else {
       plan = { customer_id: customerId, name: '', duration_weeks: 8, status: 'bozza', version: 1,
-        start_date: '', end_date: '',
+        start_date: '', end_date: '', price: '',
         days: [{ name: 'Giorno A', exercises: [defaultExercise()] }],
         nutrition: { allenamento: null, riposo: null } };
     }
@@ -943,6 +1056,11 @@
         } });
       body.appendChild(el('div', { class: 'grid-2' }, [labeled('Data inizio', startInp), labeled('Data fine', endInp)]));
       body.appendChild(calcBtn);
+
+      // Prezzo della scheda (per il calcolo dei compensi verso l'amministratore).
+      const priceInp = el('input', { type: 'number', step: '0.01', min: '0', value: plan.price != null ? plan.price : '', placeholder: 'es. 50' });
+      priceInp.addEventListener('input', (e) => { plan.price = e.target.value; });
+      body.appendChild(labeled('Prezzo della scheda (€) — usato per i compensi', priceInp));
 
       // Settimane e ripetizioni: Default + una per settimana + "+ Settimana".
       const weekBtns = el('div', { class: 'week-pills' });
