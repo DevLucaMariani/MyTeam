@@ -5,12 +5,34 @@ const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
 
+// Se l'hosting fornisce una connection string (es. Railway: MYSQL_URL /
+// DATABASE_URL), la usiamo come fallback. Formato: mysql://user:pass@host:port/db
+function parseDbUrl(raw) {
+  if (!raw) return {};
+  try {
+    const u = new URL(raw);
+    return {
+      host: decodeURIComponent(u.hostname),
+      port: u.port ? Number(u.port) : undefined,
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      database: u.pathname ? decodeURIComponent(u.pathname.replace(/^\//, '')) : undefined,
+    };
+  } catch (err) {
+    console.warn('[db] connection string non valida, la ignoro:', err.message);
+    return {};
+  }
+}
+
+const url = parseDbUrl(process.env.DATABASE_URL || process.env.MYSQL_URL);
+
+// Priorita': variabili DB_* esplicite > variabili MYSQL* (Railway) > URL > default locali.
 const config = {
-  host: process.env.DB_HOST || '127.0.0.1',
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || 'palestra',
-  password: process.env.DB_PASSWORD || 'palestra_pwd',
-  database: process.env.DB_NAME || 'palestra',
+  host: process.env.DB_HOST || process.env.MYSQLHOST || url.host || '127.0.0.1',
+  port: Number(process.env.DB_PORT || process.env.MYSQLPORT || url.port || 3306),
+  user: process.env.DB_USER || process.env.MYSQLUSER || url.user || 'palestra',
+  password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || url.password || 'palestra_pwd',
+  database: process.env.DB_NAME || process.env.MYSQLDATABASE || url.database || 'palestra',
 };
 
 let pool;
