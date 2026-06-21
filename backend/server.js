@@ -1,0 +1,518 @@
+/* eslint-env node */
+'use strict';
+
+const path = require('path');
+const express = require('express');
+const db = require('./db');
+const { seedDemo, seedCatalog } = require('./seed');
+
+const app = express();
+const PORT = Number(process.env.PORT || 3000);
+
+app.use(express.json({ limit: '15mb' })); // limite alto per le foto in base64
+
+// ---- API ------------------------------------------------------------------
+const api = express.Router();
+
+function wrap(fn) {
+  return (req, res) => {
+    Promise.resolve(fn(req, res)).catch((err) => {
+      console.error('[api] errore:', err);
+      res.status(500).json({ error: err.message });
+    });
+  };
+}
+
+api.get('/health', wrap(async (_req, res) => {
+  await db.q('SELECT 1');
+  res.json({ ok: true });
+}));
+
+// ---- Catalogo esercizi ----------------------------------------------------
+function parseRepsArray(raw) {
+  if (!raw) return [];
+  try { const a = typeof raw === 'string' ? JSON.parse(raw) : raw; return Array.isArray(a) ? a.map(String) : []; }
+  catch (e) { return []; }
+}
+
+api.get('/exercise-catalog', wrap(async (_req, res) => {
+  const rows = await db.q('SELECT id, name, muscle_group, default_series, default_reps, default_intensity FROM exercise_catalog ORDER BY muscle_group, name');
+  rows.forEach((r) => {
+    r.default_reps = parseRepsArray(r.default_reps);
+    r.default_intensity = parseRepsArray(r.default_intensity);
+  });
+  res.json(rows);
+}));
+
+function catalogDefaults(body) {
+  const series = body.default_series != null && body.default_series !== '' ? Number(body.default_series) : null;
+  const arr = (v) => (Array.isArray(v) && v.length ? JSON.stringify(v.map(String)) : null);
+  return { series, reps: arr(body.default_reps), intensity: arr(body.default_intensity) };
+}
+
+api.post('/exercise-catalog', wrap(async (req, res) => {
+  const name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Nome obbligatorio' });
+  const { series, reps, intensity } = catalogDefaults(req.body);
+  try {
+    const r = await db.q('INSERT INTO exercise_catalog (name, muscle_group, default_series, default_reps, default_intensity) VALUES (?,?,?,?,?)',
+      [name, (req.body.muscle_group || '').trim() || null, series, reps, intensity]);
+    res.status(201).json({ id: r.insertId });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Esercizio gia\' presente in catalogo' });
+    throw err;
+  }
+}));
+
+api.put('/exercise-catalog/:id', wrap(async (req, res) => {
+  const name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Nome obbligatorio' });
+  const { series, reps, intensity } = catalogDefaults(req.body);
+  try {
+    await db.q('UPDATE exercise_catalog SET name=?, muscle_group=?, default_series=?, default_reps=?, default_intensity=? WHERE id=?',
+      [name, (req.body.muscle_group || '').trim() || null, series, reps, intensity, req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Esiste gia\' un esercizio con questo nome' });
+    throw err;
+  }
+}));
+
+api.delete('/exercise-catalog/:id', wrap(async (req, res) => {
+  await db.q('DELETE FROM exercise_catalog WHERE id=?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// ---- Clienti --------------------------------------------------------------
+api.get('/customers', wrap(async (_req, res) => {
+  const rows = await db.q(
+    `SELECT c.*,
+            (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id) AS plans_count,
+            (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id AND p.status='attiva') AS active_plans
+     FROM customers c ORDER BY c.last_name, c.first_name`
+  );
+  res.json(rows);
+}));
+
+api.get('/customers/:id', wrap(async (req, res) => {
+  const [c] = await db.q('SELECT * FROM customers WHERE id=?', [req.params.id]);
+  if (!c) return res.status(404).json({ error: 'Cliente non trovato' });
+  res.json(c);
+}));
+
+const CUSTOMER_FIELDS = [
+  'first_name', 'last_name', 'email', 'phone', 'birth_date', 'gender',
+  'height_cm', 'weight_kg', 'goal', 'subscription', 'subscription_expiry',
+  'fee_amount', 'paid', 'paid_date', 'notes',
+];
+
+function pick(body, fields) {
+  const out = {};
+  fields.forEach((f) => {
+    let v = body[f];
+    if (v === '' || v === undefined) v = null;
+    // 'paid' e' un booleano: sempre 0/1 (colonna NOT NULL)
+    if (f === 'paid') v = (v === 1 || v === '1' || v === true || v === 'true') ? 1 : 0;
+    out[f] = v;
+  });
+  return out;
+}
+
+api.post('/customers', wrap(async (req, res) => {
+  const data = pick(req.body, CUSTOMER_FIELDS);
+  const cols = CUSTOMER_FIELDS.join(',');
+  const ph = CUSTOMER_FIELDS.map((f) => `:${f}`).join(',');
+  const result = await db.q(`INSERT INTO customers (${cols}) VALUES (${ph})`, data);
+  const [c] = await db.q('SELECT * FROM customers WHERE id=?', [result.insertId]);
+  res.status(201).json(c);
+}));
+
+api.put('/customers/:id', wrap(async (req, res) => {
+  const data = pick(req.body, CUSTOMER_FIELDS);
+  data.id = req.params.id;
+  const setClause = CUSTOMER_FIELDS.map((f) => `${f}=:${f}`).join(', ');
+  await db.q(`UPDATE customers SET ${setClause} WHERE id=:id`, data);
+  const [c] = await db.q('SELECT * FROM customers WHERE id=?', [req.params.id]);
+  res.json(c);
+}));
+
+api.delete('/customers/:id', wrap(async (req, res) => {
+  await db.q('DELETE FROM customers WHERE id=?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+api.get('/customers/:id/plans', wrap(async (req, res) => {
+  const rows = await db.q(
+    'SELECT * FROM plans WHERE customer_id=? ORDER BY status="attiva" DESC, updated_at DESC',
+    [req.params.id]
+  );
+  res.json(rows);
+}));
+
+// Piano attivo del cliente (per la dashboard PWA).
+api.get('/customers/:id/active-plan', wrap(async (req, res) => {
+  const [p] = await db.q(
+    "SELECT * FROM plans WHERE customer_id=? AND status='attiva' ORDER BY updated_at DESC LIMIT 1",
+    [req.params.id]
+  );
+  if (!p) return res.json(null);
+  res.json(await loadFullPlan(p.id));
+}));
+
+// ---- Piani (schede) -------------------------------------------------------
+
+// Normalizza lo schema ripetizioni assicurando array di lunghezza num_series.
+function parseReps(raw, numSeries) {
+  let scheme = { default: [], overrides: {} };
+  if (raw) {
+    try { scheme = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { /* default */ }
+  }
+  if (!scheme || typeof scheme !== 'object') scheme = { default: [], overrides: {} };
+  if (!Array.isArray(scheme.default)) scheme.default = [];
+  if (!scheme.overrides || typeof scheme.overrides !== 'object') scheme.overrides = {};
+  const n = Number(numSeries) || scheme.default.length || 1;
+  const fit = (arr) => {
+    const out = [];
+    for (let i = 0; i < n; i += 1) out.push(arr && arr[i] != null ? String(arr[i]) : '');
+    return out;
+  };
+  scheme.default = fit(scheme.default);
+  Object.keys(scheme.overrides).forEach((w) => { scheme.overrides[w] = fit(scheme.overrides[w]); });
+  return scheme;
+}
+
+async function loadFullPlan(planId) {
+  const [plan] = await db.q('SELECT * FROM plans WHERE id=?', [planId]);
+  if (!plan) return null;
+  const days = await db.q('SELECT * FROM plan_days WHERE plan_id=? ORDER BY position, id', [planId]);
+  const exercises = await db.q(
+    `SELECT e.* FROM plan_exercises e
+     JOIN plan_days d ON d.id = e.day_id
+     WHERE d.plan_id=? ORDER BY e.position, e.id`,
+    [planId]
+  );
+  exercises.forEach((e) => {
+    e.reps_scheme = parseReps(e.reps_scheme, e.num_series);
+    e.intensity_scheme = parseReps(e.intensity_scheme, e.num_series);
+  });
+  days.forEach((d) => {
+    d.exercises = exercises.filter((e) => e.day_id === d.id);
+  });
+  const nutrition = await db.q('SELECT * FROM nutrition WHERE plan_id=?', [planId]);
+  const versions = await db.q('SELECT * FROM plan_versions WHERE plan_id=? ORDER BY version DESC', [planId]);
+  plan.days = days;
+  plan.nutrition = {
+    allenamento: nutrition.find((n) => n.day_type === 'allenamento') || null,
+    riposo: nutrition.find((n) => n.day_type === 'riposo') || null,
+  };
+  plan.versions = versions;
+  return plan;
+}
+
+// Schede attive ordinate per scadenza (definita PRIMA di /plans/:id).
+api.get('/plans/overview', wrap(async (_req, res) => {
+  res.json(await db.q(
+    `SELECT p.id, p.name, p.status, p.duration_weeks, p.start_date, p.end_date, p.customer_id,
+            c.first_name, c.last_name
+     FROM plans p JOIN customers c ON c.id = p.customer_id
+     WHERE p.status = 'attiva'
+     ORDER BY p.end_date IS NULL, p.end_date ASC`
+  ));
+}));
+
+api.get('/plans/:id', wrap(async (req, res) => {
+  const plan = await loadFullPlan(req.params.id);
+  if (!plan) return res.status(404).json({ error: 'Scheda non trovata' });
+  res.json(plan);
+}));
+
+// Crea una scheda completa (struttura + nutrizione) in transazione.
+api.post('/plans', wrap(async (req, res) => {
+  const id = await db.tx(async (conn) => {
+    const planId = await insertPlanGraph(conn, req.body);
+    return planId;
+  });
+  res.status(201).json(await loadFullPlan(id));
+}));
+
+// Salva/aggiorna struttura: se la scheda e' attiva, incrementa la versione.
+api.put('/plans/:id', wrap(async (req, res) => {
+  const planId = Number(req.params.id);
+  await db.tx(async (conn) => {
+    const [existing] = await conn.query('SELECT * FROM plans WHERE id=?', [planId]);
+    const cur = existing[0];
+    if (!cur) throw new Error('Scheda non trovata');
+
+    const body = req.body;
+    let version = cur.version;
+    // Modifica di una scheda attiva -> nuova versione + storico.
+    if (cur.status === 'attiva') {
+      version += 1;
+      await conn.query(
+        'INSERT INTO plan_versions (plan_id, version, note) VALUES (?,?,?)',
+        [planId, version, body.versionNote || 'Modifica scheda attiva']
+      );
+      // Notifica al cliente: scheda aggiornata.
+      await conn.query(
+        'INSERT INTO notifications (type, audience, customer_id, plan_id, message) VALUES (?,?,?,?,?)',
+        ['plan_updated', 'client', cur.customer_id, planId, `La tua scheda "${body.name}" è stata aggiornata dall'istruttore (versione ${version}).`]
+      );
+    }
+
+    await conn.query(
+      'UPDATE plans SET name=?, duration_weeks=?, version=?, start_date=?, end_date=? WHERE id=?',
+      [body.name, Number(body.duration_weeks) || 8, version, body.start_date || null, body.end_date || null, planId]
+    );
+
+    // Riscrive struttura e nutrizione.
+    await conn.query('DELETE FROM plan_days WHERE plan_id=?', [planId]);
+    await conn.query('DELETE FROM nutrition WHERE plan_id=?', [planId]);
+    await writeDaysAndNutrition(conn, planId, body);
+  });
+  res.json(await loadFullPlan(planId));
+}));
+
+api.post('/plans/:id/activate', wrap(async (req, res) => {
+  const planId = Number(req.params.id);
+  await db.q("UPDATE plans SET status='attiva' WHERE id=?", [planId]);
+  // Notifica al cliente: scheda inviata.
+  const [info] = await db.q('SELECT customer_id, name FROM plans WHERE id=?', [planId]);
+  if (info) {
+    await db.q(
+      'INSERT INTO notifications (type, audience, customer_id, plan_id, message) VALUES (?,?,?,?,?)',
+      ['new_plan', 'client', info.customer_id, planId, `È disponibile una nuova scheda per te: "${info.name}". Buon allenamento!`]
+    );
+  }
+  res.json(await loadFullPlan(planId));
+}));
+
+api.delete('/plans/:id', wrap(async (req, res) => {
+  await db.q('DELETE FROM plans WHERE id=?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// Duplica struttura + nutrizione (NON i progressi) verso stesso o altro cliente.
+api.post('/plans/:id/duplicate', wrap(async (req, res) => {
+  const srcId = Number(req.params.id);
+  const targetCustomerId = Number(req.body.targetCustomerId);
+  const src = await loadFullPlan(srcId);
+  if (!src) return res.status(404).json({ error: 'Scheda non trovata' });
+
+  const graph = {
+    customer_id: targetCustomerId || src.customer_id,
+    name: req.body.name || `${src.name} (copia)`,
+    duration_weeks: src.duration_weeks,
+    status: 'bozza',
+    days: src.days.map((d) => ({
+      name: d.name,
+      exercises: d.exercises.map((e) => ({
+        name: e.name, num_series: e.num_series, reps_scheme: e.reps_scheme, intensity_scheme: e.intensity_scheme,
+        suggested_weight: e.suggested_weight, rest: e.rest, notes: e.notes,
+      })),
+    })),
+    nutrition: src.nutrition,
+  };
+  const newId = await db.tx(async (conn) => insertPlanGraph(conn, graph));
+  res.status(201).json(await loadFullPlan(newId));
+}));
+
+// Inserisce un piano completo (usato da create e duplicate).
+async function insertPlanGraph(conn, body) {
+  const [r] = await conn.query(
+    'INSERT INTO plans (customer_id, name, duration_weeks, status, version, start_date, end_date) VALUES (?,?,?,?,1,?,?)',
+    [body.customer_id, body.name, Number(body.duration_weeks) || 8, body.status || 'bozza',
+      body.start_date || null, body.end_date || null]
+  );
+  const planId = r.insertId;
+  await writeDaysAndNutrition(conn, planId, body);
+  return planId;
+}
+
+async function writeDaysAndNutrition(conn, planId, body) {
+  const days = Array.isArray(body.days) ? body.days : [];
+  for (let i = 0; i < days.length; i += 1) {
+    const d = days[i];
+    const [dr] = await conn.query(
+      'INSERT INTO plan_days (plan_id, position, name) VALUES (?,?,?)',
+      [planId, i, d.name || `Giorno ${i + 1}`]
+    );
+    const dayId = dr.insertId;
+    const exs = Array.isArray(d.exercises) ? d.exercises : [];
+    for (let j = 0; j < exs.length; j += 1) {
+      const e = exs[j];
+      const numSeries = Number(e.num_series) || 1;
+      const scheme = parseReps(e.reps_scheme, numSeries);
+      const intensity = parseReps(e.intensity_scheme, numSeries);
+      await conn.query(
+        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [dayId, j, e.name || 'Esercizio', numSeries,
+          e.suggested_weight || null, e.rest || null, e.notes || null, JSON.stringify(scheme), JSON.stringify(intensity)]
+      );
+      // Salva il nome nel catalogo se non gia' presente (anche se rinominato a mano),
+      // con serie, ripetizioni e intensita' come default per i riutilizzi futuri.
+      const exName = (e.name || '').trim();
+      if (exName) {
+        await conn.query('INSERT IGNORE INTO exercise_catalog (name, default_series, default_reps, default_intensity) VALUES (?,?,?,?)',
+          [exName, numSeries, JSON.stringify(scheme.default), JSON.stringify(intensity.default)]);
+      }
+    }
+  }
+  const nut = body.nutrition || {};
+  for (const type of ['allenamento', 'riposo']) {
+    const n = nut[type];
+    if (n && (n.calories || n.protein_g || n.carbs_g || n.fat_g || n.water_l)) {
+      await conn.query(
+        `INSERT INTO nutrition (plan_id, day_type, calories, protein_g, carbs_g, fat_g, water_l)
+         VALUES (?,?,?,?,?,?,?)`,
+        [planId, type, n.calories || null, n.protein_g || null, n.carbs_g || null,
+          n.fat_g || null, n.water_l || null]
+      );
+    }
+  }
+}
+
+// ---- Log esercizi (compilazione cliente) ---------------------------------
+api.get('/plans/:id/logs', wrap(async (req, res) => {
+  const week = Number(req.query.week);
+  const params = [req.params.id];
+  let sql = 'SELECT * FROM exercise_logs WHERE plan_id=?';
+  if (week) { sql += ' AND week_number=?'; params.push(week); }
+  res.json(await db.q(sql, params));
+}));
+
+api.put('/logs', wrap(async (req, res) => {
+  const { planId, exerciseId, week, seriesIndex, actualWeight, completed } = req.body;
+  await db.q(
+    `INSERT INTO exercise_logs (plan_id, exercise_id, week_number, series_index, actual_weight, completed)
+     VALUES (?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE actual_weight=VALUES(actual_weight), completed=VALUES(completed)`,
+    [planId, exerciseId, week, Number(seriesIndex) || 1, actualWeight || null, completed ? 1 : 0]
+  );
+  res.json({ ok: true });
+}));
+
+// ---- Aggiornamenti settimanali -------------------------------------------
+api.get('/plans/:id/weekly-updates', wrap(async (req, res) => {
+  res.json(await db.q(
+    'SELECT * FROM weekly_updates WHERE plan_id=? ORDER BY week_number DESC, sent_at DESC',
+    [req.params.id]
+  ));
+}));
+
+api.post('/plans/:id/weekly-updates', wrap(async (req, res) => {
+  const planId = Number(req.params.id);
+  const { week } = req.body;
+  // Calcola completamento dai log della settimana (totale = somma delle serie).
+  const [tot] = await db.q(
+    `SELECT COALESCE(SUM(e.num_series),0) AS total FROM plan_exercises e
+     JOIN plan_days d ON d.id=e.day_id WHERE d.plan_id=?`, [planId]
+  );
+  const [done] = await db.q(
+    'SELECT COUNT(*) AS done FROM exercise_logs WHERE plan_id=? AND week_number=? AND completed=1',
+    [planId, week]
+  );
+  const total = tot.total || 0;
+  const doneCount = done.done || 0;
+  const percent = total ? Math.round((doneCount / total) * 100) : 0;
+  await db.q(
+    `INSERT INTO weekly_updates (plan_id, week_number, exercises_done, total_exercises, percent_complete, note)
+     VALUES (?,?,?,?,?,?)`,
+    [planId, week, doneCount, total, percent, req.body.note || null]
+  );
+  // Genera una notifica per l'amministratore.
+  const [info] = await db.q(
+    'SELECT p.customer_id, p.name AS plan_name, c.first_name, c.last_name FROM plans p JOIN customers c ON c.id=p.customer_id WHERE p.id=?',
+    [planId]
+  );
+  if (info) {
+    const msg = `${info.first_name} ${info.last_name} ha inviato l'aggiornamento della settimana ${week} (${percent}% completato) — ${info.plan_name}.`;
+    await db.q(
+      'INSERT INTO notifications (type, customer_id, plan_id, week_number, message) VALUES (?,?,?,?,?)',
+      ['weekly_update', info.customer_id, planId, week, msg]
+    );
+  }
+  res.status(201).json({ ok: true, exercises_done: doneCount, total_exercises: total, percent_complete: percent });
+}));
+
+// ---- Notifiche (amministratore) ------------------------------------------
+api.get('/notifications', wrap(async (_req, res) => {
+  res.json(await db.q("SELECT * FROM notifications WHERE audience='admin' ORDER BY created_at DESC, id DESC LIMIT 200"));
+}));
+
+api.post('/notifications/:id/read', wrap(async (req, res) => {
+  await db.q('UPDATE notifications SET is_read=1 WHERE id=?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+api.post('/notifications/read-all', wrap(async (_req, res) => {
+  await db.q("UPDATE notifications SET is_read=1 WHERE audience='admin' AND is_read=0");
+  res.json({ ok: true });
+}));
+
+api.delete('/notifications/:id', wrap(async (req, res) => {
+  await db.q('DELETE FROM notifications WHERE id=?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// Notifiche del cliente (lato PWA).
+api.get('/customers/:id/notifications', wrap(async (req, res) => {
+  res.json(await db.q(
+    "SELECT * FROM notifications WHERE audience='client' AND customer_id=? ORDER BY created_at DESC, id DESC LIMIT 100",
+    [req.params.id]
+  ));
+}));
+
+api.post('/customers/:id/notifications/read-all', wrap(async (req, res) => {
+  await db.q("UPDATE notifications SET is_read=1 WHERE audience='client' AND customer_id=? AND is_read=0", [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// ---- Foto progressi -------------------------------------------------------
+api.get('/plans/:id/photos', wrap(async (req, res) => {
+  res.json(await db.q(
+    'SELECT id, plan_id, customer_id, photo_type, image_data, taken_at FROM progress_photos WHERE plan_id=? ORDER BY taken_at DESC',
+    [req.params.id]
+  ));
+}));
+
+api.post('/plans/:id/photos', wrap(async (req, res) => {
+  const planId = Number(req.params.id);
+  const [plan] = await db.q('SELECT customer_id FROM plans WHERE id=?', [planId]);
+  if (!plan) return res.status(404).json({ error: 'Scheda non trovata' });
+  const r = await db.q(
+    'INSERT INTO progress_photos (plan_id, customer_id, photo_type, image_data) VALUES (?,?,?,?)',
+    [planId, plan.customer_id, req.body.photo_type || 'libera', req.body.image_data]
+  );
+  res.status(201).json({ id: r.insertId });
+}));
+
+api.delete('/photos/:id', wrap(async (req, res) => {
+  await db.q('DELETE FROM progress_photos WHERE id=?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+app.use('/api', api);
+
+// ---- Frontend statico -----------------------------------------------------
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ---- Avvio ----------------------------------------------------------------
+(async () => {
+  try {
+    await db.init();
+    await seedCatalog(db); // catalogo esercizi sempre disponibile per l'autocomplete
+    if (String(process.env.SEED_DEMO).toLowerCase() === 'true') {
+      await seedDemo(db);
+    }
+    // Ascolta su tutte le interfacce del CONTAINER; l'esposizione verso l'host
+    // e' limitata a 127.0.0.1 da docker-compose (niente rete aziendale).
+    app.listen(PORT, () => console.log(`[app] in ascolto sulla porta ${PORT}`));
+  } catch (err) {
+    console.error('[app] avvio fallito:', err);
+    process.exit(1);
+  }
+})();
