@@ -67,9 +67,27 @@ async function applySchema() {
     .map((s) => s.trim())
     .filter((s) => s.length);
   const conn = await mysql.createConnection({ ...config, multipleStatements: false });
+  // MySQL (es. Railway) non supporta "ADD COLUMN IF NOT EXISTS" come MariaDB:
+  // togliamo "IF NOT EXISTS"/"IF EXISTS" dalle ALTER e ignoriamo gli errori di
+  // "gia' esistente", cosi' lo schema resta idempotente su entrambi i motori.
+  const ignorableErrno = new Set([
+    1050, // tabella gia' esistente
+    1060, // colonna duplicata
+    1061, // indice duplicato
+    1091, // drop di colonna/indice inesistente
+  ]);
+  const adapt = (stmt) =>
+    stmt
+      .replace(/\bADD\s+(COLUMN|INDEX|KEY|CONSTRAINT|UNIQUE)\s+IF\s+NOT\s+EXISTS\b/gi, 'ADD $1')
+      .replace(/\bDROP\s+(COLUMN|INDEX|KEY|CONSTRAINT)\s+IF\s+EXISTS\b/gi, 'DROP $1');
   try {
     for (const stmt of statements) {
-      await conn.query(stmt);
+      try {
+        await conn.query(adapt(stmt));
+      } catch (err) {
+        if (ignorableErrno.has(err.errno)) continue;
+        throw err;
+      }
     }
   } finally {
     await conn.end();
