@@ -1,0 +1,22 @@
+CLIENT CONFIGURATOR — Avvio rapido
+===================================
+
+REQUISITO: Docker Desktop avviato (icona attiva nella barra di sistema).
+
+PER AVVIARE:
+  1. Doppio clic su  Avvia.bat
+  2. La prima volta Docker scarica MariaDB e Node (qualche minuto).
+  3. Si apre il browser su  http://localhost:8137
+
+PER FERMARE:
+  Doppio clic su  Ferma.bat   (i dati restano salvati)
+
+NOTA SULLA PRIVACY / RETE:
+  Tutto gira solo su questo PC. Il database e l'applicazione sono
+  raggiungibili solo da "localhost" (127.0.0.1): nessuno in rete
+  aziendale puo' vederli o accedervi.
+
+DATI:
+  Restano salvati nel database locale anche dopo lo spegnimento.
+  Al primo avvio vengono caricati alcuni dati dimostrativi
+  (puoi disattivarli mettendo SEED_DEMO=false nel file .env).

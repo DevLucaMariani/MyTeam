@@ -1,0 +1,14 @@
+{
+  "name": "client-configurator-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend Node/Express + MariaDB per la piattaforma di gestione palestra (tutto locale).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0"
+  }
+}

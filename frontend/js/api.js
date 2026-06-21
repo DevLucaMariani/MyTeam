@@ -1,0 +1,70 @@
+/* Client API: piccolo wrapper su fetch verso il backend locale (/api). */
+(function () {
+  'use strict';
+
+  const BASE = '/api';
+
+  async function request(method, path, body) {
+    const opts = { method, headers: {} };
+    if (body !== undefined) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    const res = await fetch(BASE + path, opts);
+    if (!res.ok) {
+      let msg = `Errore ${res.status}`;
+      try { const j = await res.json(); if (j.error) msg = j.error; } catch (e) { /* ignora */ }
+      throw new Error(msg);
+    }
+    if (res.status === 204) return null;
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  window.API = {
+    health: () => request('GET', '/health'),
+
+    // Clienti
+    listCustomers: () => request('GET', '/customers'),
+    getCustomer: (id) => request('GET', `/customers/${id}`),
+    createCustomer: (data) => request('POST', '/customers', data),
+    updateCustomer: (id, data) => request('PUT', `/customers/${id}`, data),
+    deleteCustomer: (id) => request('DELETE', `/customers/${id}`),
+    customerPlans: (id) => request('GET', `/customers/${id}/plans`),
+    activePlan: (id) => request('GET', `/customers/${id}/active-plan`),
+    customerNotifications: (id) => request('GET', `/customers/${id}/notifications`),
+    readCustomerNotifications: (id) => request('POST', `/customers/${id}/notifications/read-all`),
+
+    // Schede
+    getPlan: (id) => request('GET', `/plans/${id}`),
+    createPlan: (data) => request('POST', '/plans', data),
+    updatePlan: (id, data) => request('PUT', `/plans/${id}`, data),
+    deletePlan: (id) => request('DELETE', `/plans/${id}`),
+    activatePlan: (id) => request('POST', `/plans/${id}/activate`),
+    duplicatePlan: (id, data) => request('POST', `/plans/${id}/duplicate`, data),
+
+    // Log e aggiornamenti
+    getLogs: (planId, week) => request('GET', `/plans/${planId}/logs?week=${week}`),
+    saveLog: (data) => request('PUT', '/logs', data),
+    weeklyUpdates: (planId) => request('GET', `/plans/${planId}/weekly-updates`),
+    sendWeeklyUpdate: (planId, data) => request('POST', `/plans/${planId}/weekly-updates`, data),
+
+    // Catalogo esercizi (per autocomplete e gestione)
+    listExerciseCatalog: () => request('GET', '/exercise-catalog'),
+    createCatalogExercise: (data) => request('POST', '/exercise-catalog', data),
+    updateCatalogExercise: (id, data) => request('PUT', `/exercise-catalog/${id}`, data),
+    deleteCatalogExercise: (id) => request('DELETE', `/exercise-catalog/${id}`),
+
+    // Notifiche e panoramica scadenze
+    listNotifications: () => request('GET', '/notifications'),
+    readNotification: (id) => request('POST', `/notifications/${id}/read`),
+    readAllNotifications: () => request('POST', '/notifications/read-all'),
+    deleteNotification: (id) => request('DELETE', `/notifications/${id}`),
+    plansOverview: () => request('GET', '/plans/overview'),
+
+    // Foto
+    getPhotos: (planId) => request('GET', `/plans/${planId}/photos`),
+    addPhoto: (planId, data) => request('POST', `/plans/${planId}/photos`, data),
+    deletePhoto: (id) => request('DELETE', `/photos/${id}`),
+  };
+})();
