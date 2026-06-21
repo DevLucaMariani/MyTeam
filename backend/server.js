@@ -81,6 +81,16 @@ api.post('/auth/trainer', wrap(async (req, res) => {
   res.json({ id: t.id, first_name: t.first_name, last_name: t.last_name, console_token: t.console_token });
 }));
 
+// Accesso trainer tramite link diretto (?t=console_token): entra senza password.
+api.get('/auth/trainer-by-token/:token', wrap(async (req, res) => {
+  const [t] = await db.q(
+    'SELECT id, first_name, last_name, console_token FROM trainers WHERE console_token=? AND active=1',
+    [req.params.token]
+  );
+  if (!t) return res.status(404).json({ error: 'Link non valido.' });
+  res.json(t);
+}));
+
 // ---- Catalogo esercizi ----------------------------------------------------
 function parseRepsArray(raw) {
   if (!raw) return [];
@@ -578,6 +588,7 @@ function trainerPublic(t) {
     id: t.id, first_name: t.first_name, last_name: t.last_name,
     email: t.email, phone: t.phone, bio: t.bio, photo: t.photo,
     username: t.username, active: t.active, created_at: t.created_at,
+    console_token: t.console_token, // serve all'admin per generare il link di accesso
   };
 }
 

@@ -176,6 +176,7 @@
           el('td', { text: t.phone || '—' }),
           el('td', { text: String(t.customers_count || 0) + ' clienti' }),
           el('td', { style: 'text-align:right; white-space:nowrap' }, [
+            el('button', { class: 'btn btn-sm btn-accent', html: '🔗 Invia accesso', onClick: () => openTrainerAccess(t) }),
             el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openTrainerForm(t) }),
             el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
               confirmDialog(`Eliminare il trainer ${t.first_name} ${t.last_name}? I suoi clienti restano, ma senza trainer assegnato.`, async () => {
@@ -241,6 +242,30 @@
             m.close(); toast('Trainer salvato', 'ok'); navigate('trainers');
           } catch (err) { toast(err.message, 'err'); }
         } }),
+      ],
+    });
+  }
+
+  // Finestra "Invia accesso" al trainer: link diretto alla console + WhatsApp.
+  function openTrainerAccess(t) {
+    const link = `${window.location.origin}/?t=${t.console_token}`;
+    const digits = (t.phone || '').replace(/\D/g, '');
+    const msg = `Ciao ${t.first_name}! Ecco l'accesso alla tua console MyTeam: ${link}`;
+    const wa = `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
+    const linkInput = el('input', { value: link, readonly: true, style: 'font-size:13px' });
+    linkInput.addEventListener('click', () => linkInput.select());
+    const m = modal({
+      title: `Accesso console — ${t.first_name} ${t.last_name}`,
+      body: el('div', {}, [
+        el('p', { class: 'muted', text: 'Con questo link il trainer entra direttamente nella sua console, senza digitare la password. Invialo solo al trainer giusto. In alternativa può accedere dalla schermata "Trainer" con nome utente e password.' }),
+        el('div', { class: 'field' }, [linkInput]),
+      ]),
+      footer: [
+        el('button', { class: 'btn', html: '📋 Copia link', onClick: () => {
+          if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => toast('Link copiato', 'ok'), () => toast('Copia non riuscita', 'err'));
+          else { linkInput.select(); document.execCommand('copy'); toast('Link copiato', 'ok'); }
+        } }),
+        el('a', { class: 'btn btn-accent', href: wa, target: '_blank', html: '🟢 Invia su WhatsApp' }),
       ],
     });
   }

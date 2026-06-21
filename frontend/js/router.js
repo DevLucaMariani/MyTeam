@@ -7,10 +7,22 @@
 
   function start() {
     appRoot = document.getElementById('app');
+    const params = new URLSearchParams(window.location.search);
     // Link personale del cliente: ?c=<token>  -> apre direttamente la sua app.
-    const token = new URLSearchParams(window.location.search).get('c');
-    if (token) { clear(appRoot); window.Client.mountByToken(appRoot, token); return; }
+    const clientToken = params.get('c');
+    if (clientToken) { clear(appRoot); window.Client.mountByToken(appRoot, clientToken); return; }
+    // Link di accesso del trainer: ?t=<token>  -> entra nella console del trainer.
+    const trainerToken = params.get('t');
+    if (trainerToken) { loginTrainerByToken(trainerToken); return; }
     goRole();
+  }
+
+  async function loginTrainerByToken(token) {
+    try {
+      const t = await window.API.trainerByToken(token);
+      window.API.setTrainerAuth(t.console_token);
+      goTrainer(t);
+    } catch (err) { toast(err.message || 'Link di accesso non valido', 'err'); goRole(); }
   }
 
   function goRole() {

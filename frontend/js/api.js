@@ -36,6 +36,7 @@
     setAdminAuth, setTrainerAuth, clearAuth,
     loginAdmin: (password) => request('POST', '/auth/admin', { password }),
     loginTrainer: (username, password) => request('POST', '/auth/trainer', { username, password }),
+    trainerByToken: (token) => request('GET', `/auth/trainer-by-token/${token}`),
 
     // Trainer (gestiti dall'amministratore)
     listTrainers: () => request('GET', '/trainers'),
