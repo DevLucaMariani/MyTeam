@@ -270,6 +270,17 @@ api.get('/customers/:id/plans', requireStaff, wrap(async (req, res) => {
   res.json(rows);
 }));
 
+// Elenco schede del cliente (storico): attive e concluse, NON le bozze.
+api.get('/customers/:id/client-plans', requireClientOrStaff, wrap(async (req, res) => {
+  if (!(await guardCustomer(req, res, req.params.id))) return;
+  res.json(await db.q(
+    `SELECT id, name, status, duration_weeks, start_date, end_date, version, updated_at
+     FROM plans WHERE customer_id=? AND status<>'bozza'
+     ORDER BY (status='attiva') DESC, updated_at DESC`,
+    [req.params.id]
+  ));
+}));
+
 // Piano attivo del cliente (per la dashboard PWA).
 api.get('/customers/:id/active-plan', requireClientOrStaff, wrap(async (req, res) => {
   if (!(await guardCustomer(req, res, req.params.id))) return;
@@ -344,7 +355,7 @@ api.get('/plans/overview', requireStaff, wrap(async (req, res) => {
   ));
 }));
 
-api.get('/plans/:id', requireStaff, wrap(async (req, res) => {
+api.get('/plans/:id', requireClientOrStaff, wrap(async (req, res) => {
   if (!(await guardPlan(req, res, req.params.id))) return;
   const plan = await loadFullPlan(req.params.id);
   if (!plan) return res.status(404).json({ error: 'Scheda non trovata' });
@@ -399,15 +410,17 @@ api.put('/plans/:id', requireStaff, wrap(async (req, res) => {
 
 api.post('/plans/:id/activate', requireStaff, wrap(async (req, res) => {
   const planId = Number(req.params.id);
+  if (!(await guardPlan(req, res, planId))) return;
+  const [info] = await db.q('SELECT customer_id, name FROM plans WHERE id=?', [planId]);
+  if (!info) return res.status(404).json({ error: 'Scheda non trovata' });
+  // Una sola scheda attiva per cliente: le altre attive diventano "archiviata".
+  await db.q("UPDATE plans SET status='archiviata' WHERE customer_id=? AND id<>? AND status='attiva'", [info.customer_id, planId]);
   await db.q("UPDATE plans SET status='attiva' WHERE id=?", [planId]);
   // Notifica al cliente: scheda inviata.
-  const [info] = await db.q('SELECT customer_id, name FROM plans WHERE id=?', [planId]);
-  if (info) {
-    await db.q(
-      'INSERT INTO notifications (type, audience, customer_id, plan_id, message) VALUES (?,?,?,?,?)',
-      ['new_plan', 'client', info.customer_id, planId, `È disponibile una nuova scheda per te: "${info.name}". Buon allenamento!`]
-    );
-  }
+  await db.q(
+    'INSERT INTO notifications (type, audience, customer_id, plan_id, message) VALUES (?,?,?,?,?)',
+    ['new_plan', 'client', info.customer_id, planId, `È disponibile una nuova scheda per te: "${info.name}". Buon allenamento!`]
+  );
   res.json(await loadFullPlan(planId));
 }));
 

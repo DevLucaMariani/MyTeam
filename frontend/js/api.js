@@ -69,6 +69,7 @@
     updateCustomer: (id, data) => request('PUT', `/customers/${id}`, data),
     deleteCustomer: (id) => request('DELETE', `/customers/${id}`),
     customerPlans: (id) => request('GET', `/customers/${id}/plans`),
+    clientPlans: (id) => request('GET', `/customers/${id}/client-plans`),
     activePlan: (id) => request('GET', `/customers/${id}/active-plan`),
     customerNotifications: (id) => request('GET', `/customers/${id}/notifications`),
     readCustomerNotifications: (id) => request('POST', `/customers/${id}/notifications/read-all`),

@@ -5,7 +5,8 @@
 
   let root;
   let customer = null;
-  let plan = null;       // piano attivo completo
+  let plan = null;       // scheda attualmente in visione (default: l'attiva)
+  let plans = [];        // elenco schede del cliente (attive + concluse)
   let trainer = null;    // trainer del cliente (mostrato nella Home)
   let curWeek = 1;
   let tab = 'home';
@@ -14,7 +15,7 @@
   // Il cliente entra esclusivamente dal proprio link personale (?c=token).
   function mountByToken(container, token) {
     root = container;
-    customer = null; plan = null; trainer = null; tab = 'home'; curWeek = 1; notifications = [];
+    customer = null; plan = null; plans = []; trainer = null; tab = 'home'; curWeek = 1; notifications = [];
     loadByToken(token);
   }
 
@@ -53,9 +54,37 @@
 
   async function openHome() {
     try { plan = await API.activePlan(customer.id); } catch (err) { plan = null; }
+    try { plans = await API.clientPlans(customer.id); } catch (err) { plans = []; }
     try { notifications = await API.customerNotifications(customer.id); } catch (err) { notifications = []; }
     curWeek = 1; tab = 'home';
     render();
+  }
+
+  // Apre una scheda specifica (dallo storico) e mostra la sua scheda.
+  async function loadPlan(id) {
+    try { plan = await API.getPlan(id); curWeek = 1; tab = 'scheda'; render(); }
+    catch (err) { toast('Impossibile aprire la scheda', 'err'); }
+  }
+
+  // Card "Le tue schede": elenco con badge Attiva/Conclusa, apribili.
+  function storicoCard() {
+    if (!plans.length) return null;
+    const card = el('div', { class: 'client-card' }, [el('h3', { text: 'Le tue schede' })]);
+    plans.forEach((p) => {
+      const isActive = p.status === 'attiva';
+      const isCurrent = plan && plan.id === p.id;
+      card.appendChild(el('div', {
+        onClick: () => loadPlan(p.id),
+        style: 'cursor:pointer; display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--line)',
+      }, [
+        el('div', { style: 'flex:1' }, [
+          el('div', { text: p.name + (isCurrent ? '  •  in visione' : ''), style: 'font-weight:' + (isCurrent ? '800' : '600') }),
+          el('div', { class: 'muted', text: (p.start_date || p.end_date) ? `${fmtDate(p.start_date)} → ${fmtDate(p.end_date)}` : '—', style: 'font-size:12px' }),
+        ]),
+        el('span', { class: 'badge ' + (isActive ? 'badge-attiva' : 'badge-bozza'), text: isActive ? 'Attiva' : 'Conclusa' }),
+      ]));
+    });
+    return card;
   }
 
   // Pop-up notifiche del cliente; all'apertura le segna come lette.
@@ -145,7 +174,9 @@
     }
     if (!plan) {
       b.appendChild(noPlan());
+      const st = storicoCard(); if (st) b.appendChild(st);
       if (trainer) b.appendChild(trainerCard());
+      b.appendChild(window.UI.copyrightLine());
       return;
     }
     // Riepilogo completamento per settimana corrente.
@@ -176,6 +207,7 @@
       el('p', { class: 'muted', text: 'Invia l\'aggiornamento settimanale e carica le foto.' }),
     ]));
 
+    const st = storicoCard(); if (st) b.appendChild(st);
     if (trainer) b.appendChild(trainerCard());
     b.appendChild(window.UI.copyrightLine());
   }
