@@ -22,6 +22,9 @@
     clear(root);
     root.appendChild(el('div', { class: 'client' }, el('div', { class: 'client-body' }, el('p', { class: 'muted', text: 'Caricamento…' }))));
     try {
+      // Tutte le chiamate successive useranno questo token: il server verifica
+      // che il cliente acceda solo ai PROPRI dati.
+      API.setClientAuth(token);
       const data = await API.getClientByToken(token);
       customer = data.customer;
       trainer = data.trainer || null;

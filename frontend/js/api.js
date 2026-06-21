@@ -10,6 +10,7 @@
   let authHeaders = {};
   function setAdminAuth(password) { authHeaders = { 'X-Admin-Password': password }; }
   function setTrainerAuth(token) { authHeaders = { 'X-Trainer-Token': token }; }
+  function setClientAuth(token) { authHeaders = { 'X-Client-Token': token }; }
   function clearAuth() { authHeaders = {}; }
 
   async function request(method, path, body) {
@@ -33,7 +34,7 @@
     health: () => request('GET', '/health'),
 
     // Autenticazione / ruoli
-    setAdminAuth, setTrainerAuth, clearAuth,
+    setAdminAuth, setTrainerAuth, setClientAuth, clearAuth,
     loginAdmin: (password) => request('POST', '/auth/admin', { password }),
     loginTrainer: (username, password) => request('POST', '/auth/trainer', { username, password }),
     trainerByToken: (token) => request('GET', `/auth/trainer-by-token/${token}`),

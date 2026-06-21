@@ -44,6 +44,11 @@ async function resolveContext(req) {
     );
     if (t) return { role: 'trainer', trainerId: t.id, trainer: t };
   }
+  const clientToken = req.get('X-Client-Token');
+  if (clientToken) {
+    const [c] = await db.q('SELECT id FROM customers WHERE access_token=?', [clientToken]);
+    if (c) return { role: 'client', customerId: c.id };
+  }
   return { role: 'guest' };
 }
 
@@ -59,6 +64,45 @@ function requireAdmin(req, res, next) {
 function requireStaff(req, res, next) {
   if (req.ctx && (req.ctx.role === 'admin' || req.ctx.role === 'trainer')) return next();
   return res.status(401).json({ error: 'Devi accedere come amministratore o trainer.' });
+}
+
+// Consente staff e cliente autenticato (col token); blocca gli ospiti anonimi.
+function requireClientOrStaff(req, res, next) {
+  if (req.ctx && ['admin', 'trainer', 'client'].includes(req.ctx.role)) return next();
+  return res.status(401).json({ error: 'Accesso non autorizzato.' });
+}
+
+// Verifica che il contesto possa accedere ai dati di un cliente.
+async function canAccessCustomer(ctx, customerId) {
+  if (!ctx) return false;
+  if (ctx.role === 'admin') return true;
+  if (ctx.role === 'client') return Number(ctx.customerId) === Number(customerId);
+  if (ctx.role === 'trainer') {
+    const [c] = await db.q('SELECT id FROM customers WHERE id=? AND trainer_id=?', [customerId, ctx.trainerId]);
+    return !!c;
+  }
+  return false;
+}
+
+// Verifica l'accesso a una scheda risalendo al cliente proprietario.
+async function canAccessPlan(ctx, planId) {
+  const [p] = await db.q('SELECT customer_id FROM plans WHERE id=?', [planId]);
+  if (!p) return false;
+  return canAccessCustomer(ctx, p.customer_id);
+}
+
+// Risponde 403 se il contesto non possiede il cliente indicato.
+async function guardCustomer(req, res, customerId) {
+  if (await canAccessCustomer(req.ctx, customerId)) return true;
+  res.status(403).json({ error: 'Non autorizzato ad accedere a questi dati.' });
+  return false;
+}
+
+// Risponde 403 se il contesto non possiede la scheda indicata.
+async function guardPlan(req, res, planId) {
+  if (await canAccessPlan(req.ctx, planId)) return true;
+  res.status(403).json({ error: 'Non autorizzato ad accedere a questi dati.' });
+  return false;
 }
 
 api.get('/health', wrap(async (_req, res) => {
@@ -165,7 +209,8 @@ api.get('/customers', requireStaff, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-api.get('/customers/:id', wrap(async (req, res) => {
+api.get('/customers/:id', requireStaff, wrap(async (req, res) => {
+  if (!(await guardCustomer(req, res, req.params.id))) return;
   const [c] = await db.q('SELECT * FROM customers WHERE id=?', [req.params.id]);
   if (!c) return res.status(404).json({ error: 'Cliente non trovato' });
   res.json(c);
@@ -215,7 +260,8 @@ api.delete('/customers/:id', requireStaff, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-api.get('/customers/:id/plans', wrap(async (req, res) => {
+api.get('/customers/:id/plans', requireStaff, wrap(async (req, res) => {
+  if (!(await guardCustomer(req, res, req.params.id))) return;
   const rows = await db.q(
     'SELECT * FROM plans WHERE customer_id=? ORDER BY status="attiva" DESC, updated_at DESC',
     [req.params.id]
@@ -224,7 +270,8 @@ api.get('/customers/:id/plans', wrap(async (req, res) => {
 }));
 
 // Piano attivo del cliente (per la dashboard PWA).
-api.get('/customers/:id/active-plan', wrap(async (req, res) => {
+api.get('/customers/:id/active-plan', requireClientOrStaff, wrap(async (req, res) => {
+  if (!(await guardCustomer(req, res, req.params.id))) return;
   const [p] = await db.q(
     "SELECT * FROM plans WHERE customer_id=? AND status='attiva' ORDER BY updated_at DESC LIMIT 1",
     [req.params.id]
@@ -296,7 +343,8 @@ api.get('/plans/overview', requireStaff, wrap(async (req, res) => {
   ));
 }));
 
-api.get('/plans/:id', wrap(async (req, res) => {
+api.get('/plans/:id', requireStaff, wrap(async (req, res) => {
+  if (!(await guardPlan(req, res, req.params.id))) return;
   const plan = await loadFullPlan(req.params.id);
   if (!plan) return res.status(404).json({ error: 'Scheda non trovata' });
   res.json(plan);
@@ -449,7 +497,8 @@ async function writeDaysAndNutrition(conn, planId, body) {
 }
 
 // ---- Log esercizi (compilazione cliente) ---------------------------------
-api.get('/plans/:id/logs', wrap(async (req, res) => {
+api.get('/plans/:id/logs', requireClientOrStaff, wrap(async (req, res) => {
+  if (!(await guardPlan(req, res, req.params.id))) return;
   const week = Number(req.query.week);
   const params = [req.params.id];
   let sql = 'SELECT * FROM exercise_logs WHERE plan_id=?';
@@ -457,8 +506,9 @@ api.get('/plans/:id/logs', wrap(async (req, res) => {
   res.json(await db.q(sql, params));
 }));
 
-api.put('/logs', wrap(async (req, res) => {
+api.put('/logs', requireClientOrStaff, wrap(async (req, res) => {
   const { planId, exerciseId, week, seriesIndex, actualWeight, completed } = req.body;
+  if (!(await guardPlan(req, res, planId))) return;
   await db.q(
     `INSERT INTO exercise_logs (plan_id, exercise_id, week_number, series_index, actual_weight, completed)
      VALUES (?,?,?,?,?,?)
@@ -469,15 +519,17 @@ api.put('/logs', wrap(async (req, res) => {
 }));
 
 // ---- Aggiornamenti settimanali -------------------------------------------
-api.get('/plans/:id/weekly-updates', wrap(async (req, res) => {
+api.get('/plans/:id/weekly-updates', requireClientOrStaff, wrap(async (req, res) => {
+  if (!(await guardPlan(req, res, req.params.id))) return;
   res.json(await db.q(
     'SELECT * FROM weekly_updates WHERE plan_id=? ORDER BY week_number DESC, sent_at DESC',
     [req.params.id]
   ));
 }));
 
-api.post('/plans/:id/weekly-updates', wrap(async (req, res) => {
+api.post('/plans/:id/weekly-updates', requireClientOrStaff, wrap(async (req, res) => {
   const planId = Number(req.params.id);
+  if (!(await guardPlan(req, res, planId))) return;
   const { week } = req.body;
   // Calcola completamento dai log della settimana (totale = somma delle serie).
   const [tot] = await db.q(
@@ -550,28 +602,32 @@ api.delete('/notifications/:id', requireStaff, wrap(async (req, res) => {
 }));
 
 // Notifiche del cliente (lato PWA).
-api.get('/customers/:id/notifications', wrap(async (req, res) => {
+api.get('/customers/:id/notifications', requireClientOrStaff, wrap(async (req, res) => {
+  if (!(await guardCustomer(req, res, req.params.id))) return;
   res.json(await db.q(
     "SELECT * FROM notifications WHERE audience='client' AND customer_id=? ORDER BY created_at DESC, id DESC LIMIT 100",
     [req.params.id]
   ));
 }));
 
-api.post('/customers/:id/notifications/read-all', wrap(async (req, res) => {
+api.post('/customers/:id/notifications/read-all', requireClientOrStaff, wrap(async (req, res) => {
+  if (!(await guardCustomer(req, res, req.params.id))) return;
   await db.q("UPDATE notifications SET is_read=1 WHERE audience='client' AND customer_id=? AND is_read=0", [req.params.id]);
   res.json({ ok: true });
 }));
 
 // ---- Foto progressi -------------------------------------------------------
-api.get('/plans/:id/photos', wrap(async (req, res) => {
+api.get('/plans/:id/photos', requireClientOrStaff, wrap(async (req, res) => {
+  if (!(await guardPlan(req, res, req.params.id))) return;
   res.json(await db.q(
     'SELECT id, plan_id, customer_id, photo_type, image_data, taken_at FROM progress_photos WHERE plan_id=? ORDER BY taken_at DESC',
     [req.params.id]
   ));
 }));
 
-api.post('/plans/:id/photos', wrap(async (req, res) => {
+api.post('/plans/:id/photos', requireClientOrStaff, wrap(async (req, res) => {
   const planId = Number(req.params.id);
+  if (!(await guardPlan(req, res, planId))) return;
   const [plan] = await db.q('SELECT customer_id FROM plans WHERE id=?', [planId]);
   if (!plan) return res.status(404).json({ error: 'Scheda non trovata' });
   const r = await db.q(
@@ -581,7 +637,10 @@ api.post('/plans/:id/photos', wrap(async (req, res) => {
   res.status(201).json({ id: r.insertId });
 }));
 
-api.delete('/photos/:id', wrap(async (req, res) => {
+api.delete('/photos/:id', requireClientOrStaff, wrap(async (req, res) => {
+  const [ph] = await db.q('SELECT customer_id FROM progress_photos WHERE id=?', [req.params.id]);
+  if (!ph) return res.json({ ok: true });
+  if (!(await guardCustomer(req, res, ph.customer_id))) return;
   await db.q('DELETE FROM progress_photos WHERE id=?', [req.params.id]);
   res.json({ ok: true });
 }));
