@@ -5,6 +5,7 @@ const path = require('path');
 const express = require('express');
 const db = require('./db');
 const auth = require('./auth');
+const pdfImport = require('./lib/pdf-import');
 const { seedDemo, seedCatalog } = require('./seed');
 
 const app = express();
@@ -503,6 +504,16 @@ async function writeDaysAndNutrition(conn, planId, body) {
     }
   }
 }
+
+// ---- Import scheda da PDF (best-effort) ----------------------------------
+api.post('/import/pdf', requireStaff, wrap(async (req, res) => {
+  const b64 = req.body.pdf_base64 || '';
+  const comma = b64.indexOf(',');
+  const data = comma >= 0 ? b64.slice(comma + 1) : b64; // rimuove "data:...;base64,"
+  if (!data) return res.status(400).json({ error: 'Nessun PDF ricevuto.' });
+  const draft = await pdfImport.importPdfBuffer(Buffer.from(data, 'base64'));
+  res.json(draft);
+}));
 
 // ---- Log esercizi (compilazione cliente) ---------------------------------
 api.get('/plans/:id/logs', requireClientOrStaff, wrap(async (req, res) => {

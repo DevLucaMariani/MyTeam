@@ -1,6 +1,9 @@
 # Immagine del backend: serve API + frontend statico.
 FROM node:20-alpine
 
+# poppler-utils fornisce "pdftotext", usato per l'import delle schede da PDF.
+RUN apk add --no-cache poppler-utils
+
 WORKDIR /app
 
 # Installa solo le dipendenze del backend

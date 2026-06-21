@@ -56,6 +56,9 @@
     // Aspetto del trainer (logo + tema), applicato a console e clienti
     updateMyBranding: (data) => request('PUT', '/me/branding', data),
 
+    // Import scheda da PDF (bozza da verificare)
+    importPdf: (pdfBase64) => request('POST', '/import/pdf', { pdf_base64: pdfBase64 }),
+
     // Accesso cliente tramite token (link personale)
     getClientByToken: (token) => request('GET', `/client/${token}`),
 

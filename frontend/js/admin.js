@@ -1040,8 +1040,50 @@
       renderList();
     }
 
+    function importFromPdf() {
+      const inp = el('input', { type: 'file', accept: 'application/pdf' });
+      inp.addEventListener('change', () => {
+        const file = inp.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            toast('Lettura PDF in corso…');
+            const draft = await API.importPdf(reader.result);
+            if (!draft.days || !draft.days.length) { toast('Nessun esercizio riconosciuto nel PDF', 'err'); return; }
+            if (!plan.name && draft.name) plan.name = draft.name;
+            plan.duration_weeks = draft.duration_weeks || plan.duration_weeks;
+            plan.start_date = draft.start_date || plan.start_date;
+            plan.end_date = draft.end_date || plan.end_date;
+            plan.days = draft.days;
+            plan._imported = true;
+            editDay = 0; editWeek = 'all';
+            headName.value = plan.name || '';
+            redraw();
+            toast('Bozza importata — controlla tutto', 'ok');
+          } catch (err) { toast(err.message || 'Import non riuscito', 'err'); }
+        };
+        reader.readAsDataURL(file);
+      });
+      inp.click();
+    }
+
     function redraw() {
       clear(body);
+
+      // Import da PDF (produce una bozza da verificare).
+      body.appendChild(el('div', { style: 'margin-bottom:10px' }, [
+        el('button', { class: 'btn btn-sm', html: '📄 Importa da PDF', onClick: () => importFromPdf() }),
+      ]));
+      if (plan._imported) {
+        body.appendChild(el('div', { class: 'nutri-disclaimer', style: 'margin-bottom:12px' }, [
+          el('span', { class: 'ico', text: '⚠️' }),
+          el('div', {}, [
+            el('strong', { text: 'Importato da PDF — da verificare' }),
+            el('p', { text: "Controlla esercizi, serie, ripetizioni e giorni: l'interpretazione automatica può contenere errori o righe di troppo. Gli schemi originali di tutte le settimane sono salvati nelle note di ogni esercizio." }),
+          ]),
+        ]));
+      }
 
       // Date di inizio e fine della scheda.
       const startInp = el('input', { type: 'date', value: (plan.start_date || '').slice(0, 10) });
