@@ -138,7 +138,7 @@
       body: el('div', { style: 'text-align:center' }, [
         el('img', { src: 'assets/logo.png', alt: '', style: 'width:52px;height:52px;margin-bottom:8px;border-radius:12px' }),
         el('h3', { text: 'MyTeam', style: 'margin:0 0 4px' }),
-        el('p', { class: 'muted', text: 'Piattaforma di gestione palestra', style: 'margin:0 0 16px' }),
+        el('p', { class: 'muted', text: 'Piattaforma di gestione team', style: 'margin:0 0 16px' }),
         el('p', { html: 'Ideato e sviluppato da <strong>Luca Mariani</strong>', style: 'margin:0 0 6px' }),
         el('p', { class: 'muted', text: `© ${year()} Luca Mariani — Tutti i diritti riservati.`, style: 'margin:0 0 14px' }),
         el('div', {}, [

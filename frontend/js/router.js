@@ -80,7 +80,7 @@
     const screen = el('div', { class: 'role-screen' }, el('div', { class: 'role-card' }, [
       el('img', { class: 'role-logo', src: 'assets/logo.png', alt: '' }),
       el('h1', { text: 'MyTeam' }),
-      el('p', { class: 'sub', text: 'Piattaforma di gestione palestra — schede, nutrizione e progressi.' }),
+      el('p', { class: 'sub', text: 'Piattaforma di gestione team — schede, nutrizione e progressi.' }),
       el('div', { class: 'role-grid' }, [
         el('button', { class: 'role-pick', onClick: () => goAdminLogin() }, [
           el('div', { class: 'ico', text: '🧑‍💼' }),
