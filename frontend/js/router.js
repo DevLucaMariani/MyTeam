@@ -27,6 +27,7 @@
 
   function goRole() {
     window.API.clearAuth();
+    window.Theme.reset();
     clear(appRoot);
     const screen = el('div', { class: 'role-screen' }, el('div', { class: 'role-card' }, [
       el('img', { class: 'role-logo', src: 'assets/icon.svg', alt: '' }),

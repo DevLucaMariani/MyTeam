@@ -10,7 +10,14 @@
   function mount(container, options) {
     root = container;
     opts = Object.assign({ role: 'admin' }, options || {});
+    applyOwnTheme();
     navigate('dashboard');
+  }
+
+  // Applica il tema: del trainer (dal suo profilo) o dell'admin (locale).
+  function applyOwnTheme() {
+    if (opts.role === 'trainer') window.Theme.apply(window.Theme.fromTrainer(opts.trainer));
+    else window.Theme.apply(window.Theme.loadAdmin());
   }
 
   function navigate(view, params) {
@@ -27,6 +34,7 @@
     ];
     // Solo l'amministratore gestisce i trainer.
     if (opts.role === 'admin') items.splice(1, 0, { view: 'trainers', ico: '🧑‍🏫', label: 'Trainer' });
+    items.push({ view: 'appearance', ico: '🎨', label: 'Aspetto' });
     return items;
   }
 
@@ -53,9 +61,11 @@
     const brandText = (opts.role === 'trainer' && opts.trainer)
       ? `${opts.trainer.first_name} ${opts.trainer.last_name}`
       : 'MyTeam';
+    const brandLogo = (opts.role === 'trainer' && opts.trainer && opts.trainer.logo)
+      ? opts.trainer.logo : 'assets/icon.svg';
     const sidebar = el('aside', { class: 'sidebar' }, [
       el('div', { class: 'brand' }, [
-        el('img', { src: 'assets/icon.svg', alt: '' }),
+        el('img', { src: brandLogo, alt: '', style: 'width:32px;height:32px;object-fit:contain;border-radius:8px' }),
         el('span', { text: brandText }),
       ]),
       opts.role === 'trainer' ? el('div', { text: 'Console Trainer', style: 'font-size:11px; opacity:.7; padding:0 16px 8px; letter-spacing:.04em; text-transform:uppercase' }) : null,
@@ -76,6 +86,7 @@
       exercises: renderExercises,
       notifications: renderNotifications,
       trainers: renderTrainers,
+      appearance: renderAppearance,
     };
     (views[state.view] || renderDashboard)(content);
     updateNotifBadge();
@@ -268,6 +279,119 @@
         el('a', { class: 'btn btn-accent', href: wa, target: '_blank', html: '🟢 Invia su WhatsApp' }),
       ],
     });
+  }
+
+  // ---- Aspetto (tema + logo) ----------------------------------------------
+  function renderAppearance(c) {
+    const isTrainer = opts.role === 'trainer';
+    const t = isTrainer ? (opts.trainer || {}) : window.Theme.loadAdmin();
+    const cur = {
+      accent: (isTrainer ? t.theme_accent : t.accent) || '',
+      mode: (isTrainer ? t.theme_mode : t.mode) || 'light',
+      bg: (isTrainer ? t.theme_bg : t.bg) || '',
+      surface: (isTrainer ? t.theme_surface : t.surface) || '',
+      logo: isTrainer ? (t.logo || null) : null,
+    };
+    const live = () => window.Theme.apply(cur);
+
+    c.appendChild(topbar('Aspetto', isTrainer
+      ? 'Logo e colori: valgono per la tua console E per l\'app dei tuoi clienti'
+      : 'Colori della tua console (solo per te)'));
+
+    const card = el('div', { class: 'card' });
+
+    // Modalità chiaro/scuro
+    const modeRow = el('div', { class: 'week-pills' });
+    [['light', '☀️ Chiaro'], ['dark', '🌙 Scuro']].forEach(([val, label]) => {
+      const b = el('button', { class: 'week-pill' + (cur.mode === val ? ' active' : ''), text: label });
+      b.addEventListener('click', () => {
+        cur.mode = val; live();
+        modeRow.querySelectorAll('.week-pill').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+      });
+      modeRow.appendChild(b);
+    });
+    card.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Modalità' }), modeRow]));
+
+    // Accento: campioni rapidi + selettore colore
+    const accentInput = el('input', { type: 'color', value: cur.accent || '#4f46e5', style: 'width:48px;height:34px;padding:2px;border-radius:8px' });
+    const swatches = el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap; align-items:center' });
+    const swatchBtns = [];
+    const refreshSwatches = () => swatchBtns.forEach((sb) => { sb.style.borderColor = (cur.accent === sb.dataset.hex) ? 'var(--ink)' : 'transparent'; });
+    window.Theme.PRESETS.forEach((hex) => {
+      const sb = el('button', { title: hex, style: `width:30px;height:30px;border-radius:50%;border:2px solid transparent;background:${hex};cursor:pointer` });
+      sb.dataset.hex = hex;
+      sb.addEventListener('click', () => { cur.accent = hex; accentInput.value = hex; live(); refreshSwatches(); });
+      swatchBtns.push(sb); swatches.appendChild(sb);
+    });
+    accentInput.addEventListener('input', (e) => { cur.accent = e.target.value; live(); refreshSwatches(); });
+    swatches.appendChild(accentInput);
+    refreshSwatches();
+    card.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Colore principale (accento)' }), swatches]));
+
+    // Sfondo + superficie (facoltativi)
+    const bgInput = el('input', { type: 'color', value: cur.bg || '#f1f5f9', style: 'width:48px;height:34px;padding:2px;border-radius:8px' });
+    bgInput.addEventListener('input', (e) => { cur.bg = e.target.value; live(); });
+    const surfInput = el('input', { type: 'color', value: cur.surface || '#ffffff', style: 'width:48px;height:34px;padding:2px;border-radius:8px' });
+    surfInput.addEventListener('input', (e) => { cur.surface = e.target.value; live(); });
+    card.appendChild(el('div', { class: 'grid-2' }, [
+      el('div', { class: 'field' }, [el('label', { text: 'Sfondo (facoltativo)' }), bgInput]),
+      el('div', { class: 'field' }, [el('label', { text: 'Card / superficie (facoltativo)' }), surfInput]),
+    ]));
+
+    // Logo (solo trainer)
+    let logoPreview = null;
+    if (isTrainer) {
+      const fileInput = el('input', { type: 'file', accept: 'image/*' });
+      logoPreview = el('img', { style: 'max-width:160px;max-height:80px;object-fit:contain;margin-top:8px;' + (cur.logo ? '' : 'display:none') });
+      if (cur.logo) logoPreview.src = cur.logo;
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => { cur.logo = reader.result; logoPreview.src = reader.result; logoPreview.style.display = 'block'; };
+        reader.readAsDataURL(file);
+      });
+      const rm = el('button', { class: 'btn btn-sm btn-danger', text: 'Rimuovi logo', onClick: () => { cur.logo = null; logoPreview.style.display = 'none'; } });
+      card.appendChild(el('div', { class: 'field' }, [
+        el('label', { text: 'Logo (mostrato a te e ai tuoi clienti)' }),
+        el('div', { style: 'display:flex; align-items:center; gap:8px; flex-wrap:wrap' }, [fileInput, rm]),
+        logoPreview,
+      ]));
+    }
+
+    // Azioni
+    card.appendChild(el('div', { style: 'display:flex; gap:8px; margin-top:6px; flex-wrap:wrap' }, [
+      el('button', { class: 'btn btn-primary', text: 'Salva', onClick: () => saveAppearance(cur, isTrainer) }),
+      el('button', { class: 'btn', text: 'Ripristina default', onClick: () => {
+        cur.accent = ''; cur.mode = 'light'; cur.bg = ''; cur.surface = '';
+        if (isTrainer) { cur.logo = null; if (logoPreview) logoPreview.style.display = 'none'; }
+        accentInput.value = '#4f46e5'; bgInput.value = '#f1f5f9'; surfInput.value = '#ffffff';
+        modeRow.querySelectorAll('.week-pill').forEach((x, i) => x.classList.toggle('active', i === 0));
+        refreshSwatches(); live();
+      } }),
+    ]));
+    c.appendChild(card);
+    live(); // anteprima immediata
+  }
+
+  async function saveAppearance(cur, isTrainer) {
+    if (isTrainer) {
+      try {
+        const t = await API.updateMyBranding({
+          logo: cur.logo || null, theme_accent: cur.accent || null, theme_mode: cur.mode || null,
+          theme_bg: cur.bg || null, theme_surface: cur.surface || null,
+        });
+        opts.trainer = Object.assign({}, opts.trainer, t);
+        window.Theme.apply(window.Theme.fromTrainer(opts.trainer));
+        render(); // aggiorna logo/nome nella sidebar
+        toast('Aspetto salvato — vale anche per i tuoi clienti', 'ok');
+      } catch (err) { toast(err.message, 'err'); }
+    } else {
+      const theme = { accent: cur.accent || '', mode: cur.mode || 'light', bg: cur.bg || '', surface: cur.surface || '' };
+      window.Theme.saveAdmin(theme);
+      window.Theme.apply(theme);
+      toast('Aspetto salvato', 'ok');
+    }
   }
 
   // ---- Esercizi (catalogo) ------------------------------------------------

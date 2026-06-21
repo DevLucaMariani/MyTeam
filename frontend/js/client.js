@@ -25,6 +25,8 @@
       const data = await API.getClientByToken(token);
       customer = data.customer;
       trainer = data.trainer || null;
+      // Applica il tema (white-label) del trainer all'app del cliente.
+      window.Theme.apply(window.Theme.fromTrainer(trainer));
       await openHome();
     } catch (err) {
       clear(root);
@@ -97,6 +99,7 @@
       unread ? el('span', { class: 'client-bell-badge', text: String(unread) }) : null,
     ]);
     return el('div', { class: 'client-header' }, [
+      (trainer && trainer.logo) ? el('img', { src: trainer.logo, alt: '', style: 'max-height:40px; max-width:150px; object-fit:contain; margin-bottom:10px' }) : null,
       el('div', { class: 'client-header-top' }, [
         el('div', {}, [
           el('div', { class: 'hello', text: 'Ciao,' }),

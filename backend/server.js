@@ -78,13 +78,19 @@ api.post('/auth/trainer', wrap(async (req, res) => {
   if (!t || !auth.verifyPassword(req.body.password || '', t.password_hash)) {
     return res.status(401).json({ error: 'Credenziali non valide.' });
   }
-  res.json({ id: t.id, first_name: t.first_name, last_name: t.last_name, console_token: t.console_token });
+  res.json({
+    id: t.id, first_name: t.first_name, last_name: t.last_name, console_token: t.console_token,
+    logo: t.logo, theme_accent: t.theme_accent, theme_mode: t.theme_mode,
+    theme_bg: t.theme_bg, theme_surface: t.theme_surface,
+  });
 }));
 
 // Accesso trainer tramite link diretto (?t=console_token): entra senza password.
 api.get('/auth/trainer-by-token/:token', wrap(async (req, res) => {
   const [t] = await db.q(
-    'SELECT id, first_name, last_name, console_token FROM trainers WHERE console_token=? AND active=1',
+    `SELECT id, first_name, last_name, console_token, logo,
+            theme_accent, theme_mode, theme_bg, theme_surface
+     FROM trainers WHERE console_token=? AND active=1`,
     [req.params.token]
   );
   if (!t) return res.status(404).json({ error: 'Link non valido.' });
@@ -581,6 +587,8 @@ api.delete('/photos/:id', wrap(async (req, res) => {
 }));
 
 // ---- Trainer (gestiti dall'amministratore) -------------------------------
+// Nota: logo e tema NON sono qui: li gestisce il trainer da sé (/me/branding),
+// cosi' un salvataggio del profilo lato admin non li azzera.
 const TRAINER_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'bio', 'photo'];
 
 function trainerPublic(t) {
@@ -589,6 +597,8 @@ function trainerPublic(t) {
     email: t.email, phone: t.phone, bio: t.bio, photo: t.photo,
     username: t.username, active: t.active, created_at: t.created_at,
     console_token: t.console_token, // serve all'admin per generare il link di accesso
+    logo: t.logo, theme_accent: t.theme_accent, theme_mode: t.theme_mode,
+    theme_bg: t.theme_bg, theme_surface: t.theme_surface,
   };
 }
 
@@ -640,6 +650,20 @@ api.delete('/trainers/:id', requireAdmin, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Il trainer aggiorna il proprio aspetto (logo + tema della console e dei clienti).
+api.put('/me/branding', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role !== 'trainer') return res.status(400).json({ error: 'Solo i trainer hanno un aspetto personalizzato.' });
+  const data = pick(req.body, ['logo', 'theme_accent', 'theme_mode', 'theme_bg', 'theme_surface']);
+  data.id = req.ctx.trainerId;
+  await db.q(
+    `UPDATE trainers SET logo=:logo, theme_accent=:theme_accent, theme_mode=:theme_mode,
+            theme_bg=:theme_bg, theme_surface=:theme_surface WHERE id=:id`,
+    data
+  );
+  const [t] = await db.q('SELECT * FROM trainers WHERE id=?', [req.ctx.trainerId]);
+  res.json(trainerPublic(t));
+}));
+
 // ---- Accesso cliente via token (link PWA personale) ----------------------
 api.get('/client/:token', wrap(async (req, res) => {
   const [c] = await db.q('SELECT * FROM customers WHERE access_token=?', [req.params.token]);
@@ -647,7 +671,9 @@ api.get('/client/:token', wrap(async (req, res) => {
   let trainer = null;
   if (c.trainer_id) {
     const [t] = await db.q(
-      'SELECT first_name, last_name, email, phone, bio, photo FROM trainers WHERE id=?',
+      `SELECT first_name, last_name, email, phone, bio, photo, logo,
+              theme_accent, theme_mode, theme_bg, theme_surface
+       FROM trainers WHERE id=?`,
       [c.trainer_id]
     );
     trainer = t || null;

@@ -48,6 +48,14 @@ CREATE TABLE IF NOT EXISTS trainers (
   UNIQUE KEY uq_trainer_token (console_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Personalizzazione (white-label) del trainer: logo e tema applicati alla sua
+-- console e all'app dei suoi clienti.
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS logo LONGTEXT;
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS theme_accent VARCHAR(20);
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(10);
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS theme_bg VARCHAR(20);
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS theme_surface VARCHAR(20);
+
 -- Collega ogni cliente al proprio trainer e dagli un token personale per il
 -- link PWA (link permanente: si invia una volta, i contenuti si aggiornano).
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS trainer_id INT;

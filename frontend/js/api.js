@@ -44,6 +44,9 @@
     updateTrainer: (id, data) => request('PUT', `/trainers/${id}`, data),
     deleteTrainer: (id) => request('DELETE', `/trainers/${id}`),
 
+    // Aspetto del trainer (logo + tema), applicato a console e clienti
+    updateMyBranding: (data) => request('PUT', '/me/branding', data),
+
     // Accesso cliente tramite token (link personale)
     getClientByToken: (token) => request('GET', `/client/${token}`),
 
