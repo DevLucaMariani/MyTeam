@@ -412,6 +412,7 @@ api.post('/plans/:id/activate', requireStaff, wrap(async (req, res) => {
 }));
 
 api.delete('/plans/:id', requireStaff, wrap(async (req, res) => {
+  if (!(await guardPlan(req, res, req.params.id))) return;
   await db.q('DELETE FROM plans WHERE id=?', [req.params.id]);
   res.json({ ok: true });
 }));

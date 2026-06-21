@@ -865,6 +865,12 @@
             el('button', { class: 'btn btn-sm', text: 'Apri', onClick: () => openPlanEditor(p.id) }),
             el('button', { class: 'btn btn-sm', text: 'Monitora', onClick: () => navigate('monitor', { planId: p.id, customerId: cu.id }) }),
             el('button', { class: 'btn btn-sm', text: 'Duplica', onClick: () => openDuplicate(p) }),
+            el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
+              confirmDialog(`Eliminare la scheda "${p.name}"? L'azione è definitiva e rimuove anche progressi e foto collegati.`, async () => {
+                try { await API.deletePlan(p.id); toast('Scheda eliminata', 'ok'); navigate('customer', { customerId: cu.id }); }
+                catch (err) { toast(err.message, 'err'); }
+              }, { danger: true, confirmLabel: 'Elimina' });
+            } }),
           ]),
           ]);
         });
