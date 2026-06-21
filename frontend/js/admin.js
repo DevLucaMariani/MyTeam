@@ -4,10 +4,12 @@
   const { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate } = window.UI;
 
   let root;
+  let opts = { role: 'admin' };
   let state = { view: 'dashboard' };
 
-  function mount(container) {
+  function mount(container, options) {
     root = container;
+    opts = Object.assign({ role: 'admin' }, options || {});
     navigate('dashboard');
   }
 
@@ -16,12 +18,17 @@
     render();
   }
 
-  const NAV = [
-    { view: 'dashboard', ico: '📊', label: 'Dashboard' },
-    { view: 'customers', ico: '👥', label: 'Clienti' },
-    { view: 'exercises', ico: '🏋️', label: 'Esercizi' },
-    { view: 'notifications', ico: '🔔', label: 'Notifiche' },
-  ];
+  function navItems() {
+    const items = [
+      { view: 'dashboard', ico: '📊', label: 'Dashboard' },
+      { view: 'customers', ico: '👥', label: 'Clienti' },
+      { view: 'exercises', ico: '🏋️', label: 'Esercizi' },
+      { view: 'notifications', ico: '🔔', label: 'Notifiche' },
+    ];
+    // Solo l'amministratore gestisce i trainer.
+    if (opts.role === 'admin') items.splice(1, 0, { view: 'trainers', ico: '🧑‍🏫', label: 'Trainer' });
+    return items;
+  }
 
   function navItem(n) {
     const children = [el('span', { class: 'ico', text: n.ico }), el('span', { text: n.label })];
@@ -43,15 +50,19 @@
 
   function render() {
     clear(root);
+    const brandText = (opts.role === 'trainer' && opts.trainer)
+      ? `${opts.trainer.first_name} ${opts.trainer.last_name}`
+      : 'MyTeam';
     const sidebar = el('aside', { class: 'sidebar' }, [
       el('div', { class: 'brand' }, [
         el('img', { src: 'assets/icon.svg', alt: '' }),
-        el('span', { text: 'Client Configurator' }),
+        el('span', { text: brandText }),
       ]),
-      ...NAV.map(navItem),
+      opts.role === 'trainer' ? el('div', { text: 'Console Trainer', style: 'font-size:11px; opacity:.7; padding:0 16px 8px; letter-spacing:.04em; text-transform:uppercase' }) : null,
+      ...navItems().map(navItem),
       el('div', { class: 'spacer' }),
       el('button', { class: 'nav-item exit', onClick: () => window.Router.goRole(),
-        }, [el('span', { class: 'ico', text: '↩' }), el('span', { text: 'Cambia ruolo' })]),
+        }, [el('span', { class: 'ico', text: '↩' }), el('span', { text: 'Esci' })]),
     ]);
 
     const content = el('main', { class: 'content', id: 'admin-content' });
@@ -64,6 +75,7 @@
       monitor: renderMonitor,
       exercises: renderExercises,
       notifications: renderNotifications,
+      trainers: renderTrainers,
     };
     (views[state.view] || renderDashboard)(content);
     updateNotifBadge();
@@ -137,6 +149,100 @@
       }
       c.appendChild(card);
     } catch (err) { showError(c, err); }
+  }
+
+  // ---- Trainer (solo amministratore) --------------------------------------
+  async function renderTrainers(c) {
+    c.appendChild(topbar('Trainer', 'Istruttori e loro credenziali'));
+    loading(c);
+    try {
+      const trainers = await API.listTrainers();
+      clear(c);
+      c.appendChild(topbar('Trainer', `${trainers.length} trainer`, [
+        el('button', { class: 'btn btn-primary', html: '+ Nuovo trainer', onClick: () => openTrainerForm() }),
+      ]));
+      const card = el('div', { class: 'card' });
+      if (!trainers.length) {
+        card.appendChild(emptyState('Nessun trainer', 'Crea il primo trainer e consegnagli nome utente e password.'));
+      } else {
+        const rows = trainers.map((t) => el('tr', {}, [
+          el('td', {}, el('div', { class: 'cell-name' }, [
+            t.photo ? el('img', { src: t.photo, alt: '', style: 'width:36px;height:36px;border-radius:50%;object-fit:cover' }) : el('span', { class: 'avatar', text: initials(t.first_name, t.last_name) }),
+            el('div', {}, [
+              el('div', { text: `${t.first_name} ${t.last_name}`, style: 'font-weight:600' }),
+              el('div', { class: 'muted', text: '@' + t.username, style: 'font-size:12px' }),
+            ]),
+          ])),
+          el('td', { text: t.phone || '—' }),
+          el('td', { text: String(t.customers_count || 0) + ' clienti' }),
+          el('td', { style: 'text-align:right; white-space:nowrap' }, [
+            el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openTrainerForm(t) }),
+            el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
+              confirmDialog(`Eliminare il trainer ${t.first_name} ${t.last_name}? I suoi clienti restano, ma senza trainer assegnato.`, async () => {
+                try { await API.deleteTrainer(t.id); toast('Trainer eliminato', 'ok'); navigate('trainers'); }
+                catch (err) { toast(err.message, 'err'); }
+              }, { danger: true, confirmLabel: 'Elimina' });
+            } }),
+          ]),
+        ]));
+        card.appendChild(el('table', { class: 'table' }, [
+          el('thead', {}, el('tr', {}, ['Trainer', 'Telefono', 'Clienti', ''].map((h) => el('th', { text: h })))),
+          el('tbody', {}, rows),
+        ]));
+      }
+      c.appendChild(card);
+    } catch (err) { showError(c, err); }
+  }
+
+  function openTrainerForm(existing) {
+    const photoState = { data: (existing && existing.photo) || null };
+    const f = el('div', {}, [
+      el('div', { class: 'grid-2' }, [
+        field('Nome', 'first_name', existing && existing.first_name),
+        field('Cognome', 'last_name', existing && existing.last_name),
+      ]),
+      el('div', { class: 'grid-2' }, [
+        field('Email', 'email', existing && existing.email),
+        field('Telefono', 'phone', existing && existing.phone),
+      ]),
+      field('Bio / specializzazione (vista dal cliente)', 'bio', existing && existing.bio, 'textarea'),
+      el('div', { class: 'section-title' }, [el('h4', { text: 'Credenziali della console' })]),
+      el('div', { class: 'grid-2' }, [
+        field('Nome utente', 'username', existing && existing.username),
+        field('Password', 'password', '', 'text', { placeholder: existing ? 'lascia vuoto per non cambiarla' : 'scegli una password' }),
+      ]),
+    ]);
+    // Foto del trainer (facoltativa).
+    const fileInput = el('input', { type: 'file', accept: 'image/*' });
+    const preview = el('img', { style: 'max-width:120px;border-radius:12px;margin-top:8px;' + (photoState.data ? '' : 'display:none') });
+    if (photoState.data) preview.src = photoState.data;
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => { photoState.data = reader.result; preview.src = reader.result; preview.style.display = 'block'; };
+      reader.readAsDataURL(file);
+    });
+    f.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Foto (facoltativa)' }), fileInput, preview]));
+
+    const m = modal({
+      title: existing ? 'Modifica trainer' : 'Nuovo trainer',
+      body: f,
+      footer: [
+        el('button', { class: 'btn', text: 'Annulla', onClick: () => m.close() }),
+        el('button', { class: 'btn btn-primary', text: 'Salva', onClick: async () => {
+          const data = formValues(f);
+          data.photo = photoState.data || null;
+          if (!data.first_name || !data.last_name) { toast('Nome e cognome obbligatori', 'err'); return; }
+          if (!existing && (!data.username || !data.password)) { toast('Nome utente e password obbligatori', 'err'); return; }
+          if (existing && !data.password) delete data.password;
+          try {
+            if (existing) await API.updateTrainer(existing.id, data);
+            else await API.createTrainer(data);
+            m.close(); toast('Trainer salvato', 'ok'); navigate('trainers');
+          } catch (err) { toast(err.message, 'err'); }
+        } }),
+      ],
+    });
   }
 
   // ---- Esercizi (catalogo) ------------------------------------------------
@@ -473,6 +579,10 @@
       ]);
       c.appendChild(billing);
 
+      // Link personale del cliente (PWA) + invio rapido via WhatsApp.
+      const linkCard = clientLinkCard(cu);
+      if (linkCard) c.appendChild(linkCard);
+
       // Schede
       const plansCard = el('div', { class: 'card' }, [el('h3', { text: 'Schede di allenamento' })]);
       if (!plans.length) {
@@ -519,6 +629,29 @@
     return el('div', { style: 'margin-bottom:8px' }, [
       el('div', { class: 'muted', text: k, style: 'font-size:12px' }),
       el('div', { text: v || '—', style: 'font-weight:600' }),
+    ]);
+  }
+
+  // Card col link personale del cliente: copia + invio su WhatsApp.
+  function clientLinkCard(cu) {
+    if (!cu.access_token) return null;
+    const link = `${window.location.origin}/?c=${cu.access_token}`;
+    const digits = (cu.phone || '').replace(/\D/g, '');
+    const msg = `Ciao ${cu.first_name}! Questo è il tuo link personale per la scheda di allenamento: ${link}`;
+    const wa = `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
+    const linkInput = el('input', { value: link, readonly: true, style: 'font-size:13px' });
+    linkInput.addEventListener('click', () => linkInput.select());
+    return el('div', { class: 'card' }, [
+      el('h3', { text: '🔗 Link personale del cliente' }),
+      el('p', { class: 'muted', text: 'Invialo una volta sola: il link resta valido e i contenuti si aggiornano da soli.' }),
+      el('div', { class: 'field' }, [linkInput]),
+      el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap' }, [
+        el('button', { class: 'btn', html: '📋 Copia link', onClick: () => {
+          if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => toast('Link copiato', 'ok'), () => toast('Copia non riuscita', 'err'));
+          else { linkInput.select(); document.execCommand('copy'); toast('Link copiato', 'ok'); }
+        } }),
+        el('a', { class: 'btn btn-accent', href: wa, target: '_blank', html: '🟢 Invia su WhatsApp' }),
+      ]),
     ]);
   }
 

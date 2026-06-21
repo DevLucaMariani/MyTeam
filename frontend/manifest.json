@@ -1,6 +1,6 @@
 {
-  "name": "Client Configurator — Gestione Palestra",
-  "short_name": "Palestra",
+  "name": "MyTeam — Gestione Palestra",
+  "short_name": "MyTeam",
   "description": "Schede di allenamento, piano nutrizionale e monitoraggio progressi.",
   "start_url": "./index.html",
   "display": "standalone",

@@ -6,46 +6,44 @@
   let root;
   let customer = null;
   let plan = null;       // piano attivo completo
+  let trainer = null;    // trainer del cliente (mostrato nella Home)
   let curWeek = 1;
   let tab = 'home';
   let notifications = [];
 
-  function mount(container) {
+  // Il cliente entra esclusivamente dal proprio link personale (?c=token).
+  function mountByToken(container, token) {
     root = container;
-    customer = null; plan = null; tab = 'home'; curWeek = 1; notifications = [];
-    pickCustomer();
+    customer = null; plan = null; trainer = null; tab = 'home'; curWeek = 1; notifications = [];
+    loadByToken(token);
   }
 
-  // Senza login: il cliente seleziona il proprio nominativo.
-  async function pickCustomer() {
+  async function loadByToken(token) {
     clear(root);
-    const wrap = el('div', { class: 'client' });
-    wrap.appendChild(el('div', { class: 'client-header' }, [
-      el('div', { class: 'hello', text: 'Benvenuto' }),
-      el('h2', { text: 'Chi sei?' }),
-    ]));
-    const body = el('div', { class: 'client-body' });
-    body.appendChild(el('p', { class: 'muted', text: 'Seleziona il tuo nominativo per vedere la tua scheda.' }));
+    root.appendChild(el('div', { class: 'client' }, el('div', { class: 'client-body' }, el('p', { class: 'muted', text: 'Caricamento…' }))));
     try {
-      const customers = await API.listCustomers();
-      customers.forEach((cu) => {
-        body.appendChild(el('div', { class: 'client-card', onClick: () => { customer = cu; openHome(); },
-          style: 'cursor:pointer;display:flex;align-items:center;gap:12px' }, [
-          el('span', { class: 'avatar', text: window.UI.initials(cu.first_name, cu.last_name) }),
-          el('div', {}, [
-            el('div', { text: `${cu.first_name} ${cu.last_name}`, style: 'font-weight:700' }),
-            el('div', { class: 'muted', text: Number(cu.active_plans) ? 'Scheda attiva disponibile' : 'Nessuna scheda attiva', style: 'font-size:12.5px' }),
-          ]),
-        ]));
-      });
-      if (!customers.length) body.appendChild(el('p', { class: 'muted', text: 'Nessun cliente presente.' }));
+      const data = await API.getClientByToken(token);
+      customer = data.customer;
+      trainer = data.trainer || null;
+      await openHome();
     } catch (err) {
-      body.appendChild(el('p', { class: 'muted', text: 'Backend non raggiungibile. Avvia i container (Avvia.bat).' }));
+      clear(root);
+      root.appendChild(el('div', { class: 'client' }, el('div', { class: 'client-body' }, [
+        el('h2', { text: 'Link non valido' }),
+        el('p', { class: 'muted', text: 'Questo link non è più valido. Chiedi al tuo trainer di inviartene uno nuovo.' }),
+      ])));
     }
-    body.appendChild(el('button', { class: 'btn btn-block', text: '↩ Cambia ruolo', style: 'margin-top:18px',
-      onClick: () => window.Router.goRole() }));
-    wrap.appendChild(body);
-    root.appendChild(wrap);
+  }
+
+  // Accesso senza link (dalla scelta ruolo): spiega come entrare.
+  function mount(container) {
+    root = container;
+    clear(root);
+    root.appendChild(el('div', { class: 'client' }, el('div', { class: 'client-body' }, [
+      el('h2', { text: 'Accesso cliente' }),
+      el('p', { class: 'muted', text: 'Apri il link personale che ti ha inviato il tuo trainer per vedere la tua scheda.' }),
+      el('button', { class: 'btn btn-block', text: '↩ Torna alla scelta ruolo', style: 'margin-top:14px', onClick: () => window.Router.goRole() }),
+    ])));
   }
 
   async function openHome() {
@@ -141,6 +139,7 @@
     }
     if (!plan) {
       b.appendChild(noPlan());
+      if (trainer) b.appendChild(trainerCard());
       return;
     }
     // Riepilogo completamento per settimana corrente.
@@ -170,13 +169,36 @@
       el('h3', { text: '📈 Progressi e foto' }),
       el('p', { class: 'muted', text: 'Invia l\'aggiornamento settimanale e carica le foto.' }),
     ]));
+
+    if (trainer) b.appendChild(trainerCard());
   }
 
   function noPlan() {
     return el('div', { class: 'client-card' }, [
       el('h3', { text: 'Nessuna scheda attiva' }),
-      el('p', { class: 'muted', text: 'Il tuo istruttore non ha ancora attivato una scheda. Riprova più tardi.' }),
-      el('button', { class: 'btn btn-block', text: '↩ Cambia utente', style: 'margin-top:12px', onClick: () => pickCustomer() }),
+      el('p', { class: 'muted', text: 'Il tuo trainer non ha ancora attivato una scheda. Riprova più tardi.' }),
+    ]);
+  }
+
+  // Card "Il tuo trainer": nome, foto, bio e contatti rapidi.
+  function trainerCard() {
+    const digits = (trainer.phone || '').replace(/\D/g, '');
+    const contacts = el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap; margin-top:10px' });
+    if (trainer.phone) contacts.appendChild(el('a', { class: 'btn btn-sm btn-accent', href: `https://wa.me/${digits}`, target: '_blank', html: '🟢 WhatsApp' }));
+    if (trainer.phone) contacts.appendChild(el('a', { class: 'btn btn-sm', href: `tel:${trainer.phone}`, html: '📞 Chiama' }));
+    if (trainer.email) contacts.appendChild(el('a', { class: 'btn btn-sm', href: `mailto:${trainer.email}`, html: '✉️ Email' }));
+    return el('div', { class: 'client-card' }, [
+      el('h3', { text: 'Il tuo trainer' }),
+      el('div', { style: 'display:flex; align-items:center; gap:12px; margin-top:6px' }, [
+        trainer.photo
+          ? el('img', { src: trainer.photo, alt: '', style: 'width:56px;height:56px;border-radius:50%;object-fit:cover' })
+          : el('span', { class: 'avatar', text: window.UI.initials(trainer.first_name, trainer.last_name) }),
+        el('div', {}, [
+          el('div', { text: `${trainer.first_name} ${trainer.last_name}`, style: 'font-weight:700' }),
+          trainer.bio ? el('div', { class: 'muted', text: trainer.bio, style: 'font-size:12.5px; margin-top:2px' }) : null,
+        ]),
+      ]),
+      contacts,
     ]);
   }
 
@@ -418,5 +440,5 @@
     img.src = src;
   }
 
-  window.Client = { mount };
+  window.Client = { mount, mountByToken };
 })();

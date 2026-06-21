@@ -4,6 +4,7 @@
 const path = require('path');
 const express = require('express');
 const db = require('./db');
+const auth = require('./auth');
 const { seedDemo, seedCatalog } = require('./seed');
 
 const app = express();
@@ -23,9 +24,61 @@ function wrap(fn) {
   };
 }
 
+// ---- Autenticazione / ruoli ----------------------------------------------
+// Password amministratore: impostala su Railway come variabile ADMIN_PASSWORD.
+// (Default 'admin' solo per non bloccare il primo avvio: cambiala subito.)
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+
+// Determina il ruolo della richiesta dagli header:
+//  - X-Admin-Password -> amministratore (vede tutto)
+//  - X-Trainer-Token  -> trainer (vede solo i propri clienti)
+//  - altrimenti       -> ospite (cliente via link + endpoint pubblici)
+async function resolveContext(req) {
+  const adminPwd = req.get('X-Admin-Password');
+  if (adminPwd && adminPwd === ADMIN_PASSWORD) return { role: 'admin' };
+  const token = req.get('X-Trainer-Token');
+  if (token) {
+    const [t] = await db.q(
+      'SELECT id, first_name, last_name FROM trainers WHERE console_token=? AND active=1',
+      [token]
+    );
+    if (t) return { role: 'trainer', trainerId: t.id, trainer: t };
+  }
+  return { role: 'guest' };
+}
+
+api.use((req, _res, next) => {
+  resolveContext(req).then((ctx) => { req.ctx = ctx; next(); }).catch(next);
+});
+
+function requireAdmin(req, res, next) {
+  if (req.ctx && req.ctx.role === 'admin') return next();
+  return res.status(401).json({ error: "Accesso riservato all'amministratore." });
+}
+
+function requireStaff(req, res, next) {
+  if (req.ctx && (req.ctx.role === 'admin' || req.ctx.role === 'trainer')) return next();
+  return res.status(401).json({ error: 'Devi accedere come amministratore o trainer.' });
+}
+
 api.get('/health', wrap(async (_req, res) => {
   await db.q('SELECT 1');
   res.json({ ok: true });
+}));
+
+// ---- Login (admin / trainer) ---------------------------------------------
+api.post('/auth/admin', wrap(async (req, res) => {
+  if ((req.body.password || '') === ADMIN_PASSWORD) return res.json({ ok: true });
+  res.status(401).json({ error: 'Password non corretta.' });
+}));
+
+api.post('/auth/trainer', wrap(async (req, res) => {
+  const username = (req.body.username || '').trim();
+  const [t] = await db.q('SELECT * FROM trainers WHERE username=? AND active=1', [username]);
+  if (!t || !auth.verifyPassword(req.body.password || '', t.password_hash)) {
+    return res.status(401).json({ error: 'Credenziali non valide.' });
+  }
+  res.json({ id: t.id, first_name: t.first_name, last_name: t.last_name, console_token: t.console_token });
 }));
 
 // ---- Catalogo esercizi ----------------------------------------------------
@@ -84,12 +137,14 @@ api.delete('/exercise-catalog/:id', wrap(async (req, res) => {
 }));
 
 // ---- Clienti --------------------------------------------------------------
-api.get('/customers', wrap(async (_req, res) => {
+api.get('/customers', requireStaff, wrap(async (req, res) => {
+  const onlyMine = req.ctx.role === 'trainer';
   const rows = await db.q(
     `SELECT c.*,
             (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id) AS plans_count,
             (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id AND p.status='attiva') AS active_plans
-     FROM customers c ORDER BY c.last_name, c.first_name`
+     FROM customers c ${onlyMine ? 'WHERE c.trainer_id = :tid' : ''} ORDER BY c.last_name, c.first_name`,
+    onlyMine ? { tid: req.ctx.trainerId } : undefined
   );
   res.json(rows);
 }));
@@ -118,16 +173,19 @@ function pick(body, fields) {
   return out;
 }
 
-api.post('/customers', wrap(async (req, res) => {
+api.post('/customers', requireStaff, wrap(async (req, res) => {
   const data = pick(req.body, CUSTOMER_FIELDS);
-  const cols = CUSTOMER_FIELDS.join(',');
-  const ph = CUSTOMER_FIELDS.map((f) => `:${f}`).join(',');
-  const result = await db.q(`INSERT INTO customers (${cols}) VALUES (${ph})`, data);
+  // Il trainer assegna il cliente a se stesso; l'admin puo' indicare trainer_id.
+  data.trainer_id = req.ctx.role === 'trainer' ? req.ctx.trainerId : (req.body.trainer_id || null);
+  data.access_token = auth.randomToken(); // link personale permanente del cliente
+  const cols = [...CUSTOMER_FIELDS, 'trainer_id', 'access_token'];
+  const ph = cols.map((f) => `:${f}`).join(',');
+  const result = await db.q(`INSERT INTO customers (${cols.join(',')}) VALUES (${ph})`, data);
   const [c] = await db.q('SELECT * FROM customers WHERE id=?', [result.insertId]);
   res.status(201).json(c);
 }));
 
-api.put('/customers/:id', wrap(async (req, res) => {
+api.put('/customers/:id', requireStaff, wrap(async (req, res) => {
   const data = pick(req.body, CUSTOMER_FIELDS);
   data.id = req.params.id;
   const setClause = CUSTOMER_FIELDS.map((f) => `${f}=:${f}`).join(', ');
@@ -136,7 +194,7 @@ api.put('/customers/:id', wrap(async (req, res) => {
   res.json(c);
 }));
 
-api.delete('/customers/:id', wrap(async (req, res) => {
+api.delete('/customers/:id', requireStaff, wrap(async (req, res) => {
   await db.q('DELETE FROM customers WHERE id=?', [req.params.id]);
   res.json({ ok: true });
 }));
@@ -210,13 +268,15 @@ async function loadFullPlan(planId) {
 }
 
 // Schede attive ordinate per scadenza (definita PRIMA di /plans/:id).
-api.get('/plans/overview', wrap(async (_req, res) => {
+api.get('/plans/overview', requireStaff, wrap(async (req, res) => {
+  const onlyMine = req.ctx.role === 'trainer';
   res.json(await db.q(
     `SELECT p.id, p.name, p.status, p.duration_weeks, p.start_date, p.end_date, p.customer_id,
             c.first_name, c.last_name
      FROM plans p JOIN customers c ON c.id = p.customer_id
-     WHERE p.status = 'attiva'
-     ORDER BY p.end_date IS NULL, p.end_date ASC`
+     WHERE p.status = 'attiva' ${onlyMine ? 'AND c.trainer_id = :tid' : ''}
+     ORDER BY p.end_date IS NULL, p.end_date ASC`,
+    onlyMine ? { tid: req.ctx.trainerId } : undefined
   ));
 }));
 
@@ -227,7 +287,7 @@ api.get('/plans/:id', wrap(async (req, res) => {
 }));
 
 // Crea una scheda completa (struttura + nutrizione) in transazione.
-api.post('/plans', wrap(async (req, res) => {
+api.post('/plans', requireStaff, wrap(async (req, res) => {
   const id = await db.tx(async (conn) => {
     const planId = await insertPlanGraph(conn, req.body);
     return planId;
@@ -236,7 +296,7 @@ api.post('/plans', wrap(async (req, res) => {
 }));
 
 // Salva/aggiorna struttura: se la scheda e' attiva, incrementa la versione.
-api.put('/plans/:id', wrap(async (req, res) => {
+api.put('/plans/:id', requireStaff, wrap(async (req, res) => {
   const planId = Number(req.params.id);
   await db.tx(async (conn) => {
     const [existing] = await conn.query('SELECT * FROM plans WHERE id=?', [planId]);
@@ -272,7 +332,7 @@ api.put('/plans/:id', wrap(async (req, res) => {
   res.json(await loadFullPlan(planId));
 }));
 
-api.post('/plans/:id/activate', wrap(async (req, res) => {
+api.post('/plans/:id/activate', requireStaff, wrap(async (req, res) => {
   const planId = Number(req.params.id);
   await db.q("UPDATE plans SET status='attiva' WHERE id=?", [planId]);
   // Notifica al cliente: scheda inviata.
@@ -286,13 +346,13 @@ api.post('/plans/:id/activate', wrap(async (req, res) => {
   res.json(await loadFullPlan(planId));
 }));
 
-api.delete('/plans/:id', wrap(async (req, res) => {
+api.delete('/plans/:id', requireStaff, wrap(async (req, res) => {
   await db.q('DELETE FROM plans WHERE id=?', [req.params.id]);
   res.json({ ok: true });
 }));
 
 // Duplica struttura + nutrizione (NON i progressi) verso stesso o altro cliente.
-api.post('/plans/:id/duplicate', wrap(async (req, res) => {
+api.post('/plans/:id/duplicate', requireStaff, wrap(async (req, res) => {
   const srcId = Number(req.params.id);
   const targetCustomerId = Number(req.body.targetCustomerId);
   const src = await loadFullPlan(srcId);
@@ -435,22 +495,40 @@ api.post('/plans/:id/weekly-updates', wrap(async (req, res) => {
   res.status(201).json({ ok: true, exercises_done: doneCount, total_exercises: total, percent_complete: percent });
 }));
 
-// ---- Notifiche (amministratore) ------------------------------------------
-api.get('/notifications', wrap(async (_req, res) => {
+// ---- Notifiche (amministratore / trainer) --------------------------------
+// Il trainer vede solo le notifiche relative ai propri clienti.
+api.get('/notifications', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role === 'trainer') {
+    return res.json(await db.q(
+      `SELECT n.* FROM notifications n
+       JOIN customers c ON c.id = n.customer_id
+       WHERE n.audience='admin' AND c.trainer_id=:tid
+       ORDER BY n.created_at DESC, n.id DESC LIMIT 200`,
+      { tid: req.ctx.trainerId }
+    ));
+  }
   res.json(await db.q("SELECT * FROM notifications WHERE audience='admin' ORDER BY created_at DESC, id DESC LIMIT 200"));
 }));
 
-api.post('/notifications/:id/read', wrap(async (req, res) => {
+api.post('/notifications/:id/read', requireStaff, wrap(async (req, res) => {
   await db.q('UPDATE notifications SET is_read=1 WHERE id=?', [req.params.id]);
   res.json({ ok: true });
 }));
 
-api.post('/notifications/read-all', wrap(async (_req, res) => {
-  await db.q("UPDATE notifications SET is_read=1 WHERE audience='admin' AND is_read=0");
+api.post('/notifications/read-all', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role === 'trainer') {
+    await db.q(
+      `UPDATE notifications n JOIN customers c ON c.id = n.customer_id
+       SET n.is_read=1 WHERE n.audience='admin' AND n.is_read=0 AND c.trainer_id=?`,
+      [req.ctx.trainerId]
+    );
+  } else {
+    await db.q("UPDATE notifications SET is_read=1 WHERE audience='admin' AND is_read=0");
+  }
   res.json({ ok: true });
 }));
 
-api.delete('/notifications/:id', wrap(async (req, res) => {
+api.delete('/notifications/:id', requireStaff, wrap(async (req, res) => {
   await db.q('DELETE FROM notifications WHERE id=?', [req.params.id]);
   res.json({ ok: true });
 }));
@@ -490,6 +568,80 @@ api.post('/plans/:id/photos', wrap(async (req, res) => {
 api.delete('/photos/:id', wrap(async (req, res) => {
   await db.q('DELETE FROM progress_photos WHERE id=?', [req.params.id]);
   res.json({ ok: true });
+}));
+
+// ---- Trainer (gestiti dall'amministratore) -------------------------------
+const TRAINER_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'bio', 'photo'];
+
+function trainerPublic(t) {
+  return {
+    id: t.id, first_name: t.first_name, last_name: t.last_name,
+    email: t.email, phone: t.phone, bio: t.bio, photo: t.photo,
+    username: t.username, active: t.active, created_at: t.created_at,
+  };
+}
+
+api.get('/trainers', requireAdmin, wrap(async (_req, res) => {
+  const rows = await db.q(
+    `SELECT t.*, (SELECT COUNT(*) FROM customers c WHERE c.trainer_id = t.id) AS customers_count
+     FROM trainers t ORDER BY t.last_name, t.first_name`
+  );
+  res.json(rows.map((t) => ({ ...trainerPublic(t), customers_count: t.customers_count })));
+}));
+
+api.post('/trainers', requireAdmin, wrap(async (req, res) => {
+  const username = (req.body.username || '').trim();
+  const password = req.body.password || '';
+  if (!req.body.first_name || !req.body.last_name) return res.status(400).json({ error: 'Nome e cognome obbligatori.' });
+  if (!username || !password) return res.status(400).json({ error: 'Nome utente e password obbligatori.' });
+  const data = pick(req.body, TRAINER_FIELDS);
+  data.username = username;
+  data.password_hash = auth.hashPassword(password);
+  data.console_token = auth.randomToken();
+  const cols = [...TRAINER_FIELDS, 'username', 'password_hash', 'console_token'];
+  const ph = cols.map((f) => `:${f}`).join(',');
+  try {
+    const r = await db.q(`INSERT INTO trainers (${cols.join(',')}) VALUES (${ph})`, data);
+    const [t] = await db.q('SELECT * FROM trainers WHERE id=?', [r.insertId]);
+    res.status(201).json(trainerPublic(t));
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: "Nome utente gia' in uso." });
+    throw err;
+  }
+}));
+
+api.put('/trainers/:id', requireAdmin, wrap(async (req, res) => {
+  const data = pick(req.body, TRAINER_FIELDS);
+  data.id = req.params.id;
+  const setClause = TRAINER_FIELDS.map((f) => `${f}=:${f}`).join(', ');
+  await db.q(`UPDATE trainers SET ${setClause} WHERE id=:id`, data);
+  if (req.body.password) {
+    await db.q('UPDATE trainers SET password_hash=? WHERE id=?', [auth.hashPassword(req.body.password), req.params.id]);
+  }
+  const [t] = await db.q('SELECT * FROM trainers WHERE id=?', [req.params.id]);
+  res.json(trainerPublic(t));
+}));
+
+api.delete('/trainers/:id', requireAdmin, wrap(async (req, res) => {
+  // I clienti restano: si stacca solo il collegamento al trainer.
+  await db.q('UPDATE customers SET trainer_id=NULL WHERE trainer_id=?', [req.params.id]);
+  await db.q('DELETE FROM trainers WHERE id=?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// ---- Accesso cliente via token (link PWA personale) ----------------------
+api.get('/client/:token', wrap(async (req, res) => {
+  const [c] = await db.q('SELECT * FROM customers WHERE access_token=?', [req.params.token]);
+  if (!c) return res.status(404).json({ error: 'Link non valido o scaduto.' });
+  let trainer = null;
+  if (c.trainer_id) {
+    const [t] = await db.q(
+      'SELECT first_name, last_name, email, phone, bio, photo FROM trainers WHERE id=?',
+      [c.trainer_id]
+    );
+    trainer = t || null;
+  }
+  res.json({ customer: c, trainer });
 }));
 
 app.use('/api', api);

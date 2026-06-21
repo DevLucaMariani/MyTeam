@@ -26,6 +26,34 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS fee_amount DECIMAL(10,2);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS paid TINYINT(1) NOT NULL DEFAULT 0;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS paid_date DATE;
 
+-- Ruolo "trainer" (istruttore): ogni trainer ha una propria console e vede solo
+-- i propri clienti. Le credenziali sono create dall'amministratore.
+CREATE TABLE IF NOT EXISTS trainers (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  first_name    VARCHAR(80) NOT NULL,
+  last_name     VARCHAR(80) NOT NULL,
+  email         VARCHAR(160),
+  phone         VARCHAR(40),
+  bio           TEXT,
+  -- Foto del trainer come data URL base64 (mostrata al cliente).
+  photo         LONGTEXT,
+  username      VARCHAR(80) NOT NULL,
+  -- Password salata+hash (mai in chiaro); vedi backend/auth.js.
+  password_hash VARCHAR(255) NOT NULL,
+  -- Token segreto della console del trainer (usato come "sessione" lato client).
+  console_token VARCHAR(64) NOT NULL,
+  active        TINYINT(1) NOT NULL DEFAULT 1,
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_trainer_username (username),
+  UNIQUE KEY uq_trainer_token (console_token)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Collega ogni cliente al proprio trainer e dagli un token personale per il
+-- link PWA (link permanente: si invia una volta, i contenuti si aggiornano).
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS trainer_id INT;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS access_token VARCHAR(64);
+ALTER TABLE customers ADD UNIQUE INDEX uq_customer_token (access_token);
+
 CREATE TABLE IF NOT EXISTS plans (
   id             INT AUTO_INCREMENT PRIMARY KEY,
   customer_id    INT NOT NULL,

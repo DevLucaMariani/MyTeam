@@ -4,8 +4,16 @@
 
   const BASE = '/api';
 
+  // Header di autenticazione applicati a ogni richiesta:
+  //  - admin:   X-Admin-Password
+  //  - trainer: X-Trainer-Token
+  let authHeaders = {};
+  function setAdminAuth(password) { authHeaders = { 'X-Admin-Password': password }; }
+  function setTrainerAuth(token) { authHeaders = { 'X-Trainer-Token': token }; }
+  function clearAuth() { authHeaders = {}; }
+
   async function request(method, path, body) {
-    const opts = { method, headers: {} };
+    const opts = { method, headers: { ...authHeaders } };
     if (body !== undefined) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
@@ -23,6 +31,20 @@
 
   window.API = {
     health: () => request('GET', '/health'),
+
+    // Autenticazione / ruoli
+    setAdminAuth, setTrainerAuth, clearAuth,
+    loginAdmin: (password) => request('POST', '/auth/admin', { password }),
+    loginTrainer: (username, password) => request('POST', '/auth/trainer', { username, password }),
+
+    // Trainer (gestiti dall'amministratore)
+    listTrainers: () => request('GET', '/trainers'),
+    createTrainer: (data) => request('POST', '/trainers', data),
+    updateTrainer: (id, data) => request('PUT', `/trainers/${id}`, data),
+    deleteTrainer: (id) => request('DELETE', `/trainers/${id}`),
+
+    // Accesso cliente tramite token (link personale)
+    getClientByToken: (token) => request('GET', `/client/${token}`),
 
     // Clienti
     listCustomers: () => request('GET', '/customers'),
