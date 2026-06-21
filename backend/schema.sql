@@ -137,6 +137,9 @@ CREATE TABLE IF NOT EXISTS plan_exercises (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS intensity_scheme LONGTEXT;
+-- Codice superset: esercizi con lo stesso codice (nello stesso giorno) si
+-- eseguono insieme come superset. Vuoto/NULL = esercizio singolo.
+ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS superset_group VARCHAR(8);
 
 -- Piano nutrizionale: una riga per tipo di giorno (allenamento / riposo).
 CREATE TABLE IF NOT EXISTS nutrition (

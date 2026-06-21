@@ -434,7 +434,7 @@ api.post('/plans/:id/duplicate', requireStaff, wrap(async (req, res) => {
       name: d.name,
       exercises: d.exercises.map((e) => ({
         name: e.name, num_series: e.num_series, reps_scheme: e.reps_scheme, intensity_scheme: e.intensity_scheme,
-        suggested_weight: e.suggested_weight, rest: e.rest, notes: e.notes,
+        suggested_weight: e.suggested_weight, rest: e.rest, notes: e.notes, superset_group: e.superset_group,
       })),
     })),
     nutrition: src.nutrition,
@@ -478,10 +478,11 @@ async function writeDaysAndNutrition(conn, planId, body) {
       const scheme = parseReps(e.reps_scheme, numSeries);
       const intensity = parseReps(e.intensity_scheme, numSeries);
       await conn.query(
-        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme, superset_group)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
         [dayId, j, e.name || 'Esercizio', numSeries,
-          e.suggested_weight || null, e.rest || null, e.notes || null, JSON.stringify(scheme), JSON.stringify(intensity)]
+          e.suggested_weight || null, e.rest || null, e.notes || null, JSON.stringify(scheme), JSON.stringify(intensity),
+          (e.superset_group || '').trim() || null]
       );
       // Salva il nome nel catalogo se non gia' presente (anche se rinominato a mano),
       // con serie, ripetizioni e intensita' come default per i riutilizzi futuri.

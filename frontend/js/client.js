@@ -240,6 +240,7 @@
         // Intestazione esercizio: nome + meta + nota (generale dell'esercizio)
         card.appendChild(el('div', { class: 'ex-head' }, [
           el('div', { class: 'name', text: ex.name }),
+          ex.superset_group ? el('div', { class: 'meta', html: `🔗 <strong>Superset ${ex.superset_group}</strong> — esegui insieme agli esercizi con lo stesso codice` }) : null,
           (ex.suggested_weight || ex.rest)
             ? el('div', { class: 'meta', text: (ex.suggested_weight ? 'peso sugg. ' + ex.suggested_weight : '') + (ex.rest ? ' · rec ' + ex.rest : '') })
             : null,

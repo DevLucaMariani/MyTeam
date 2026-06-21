@@ -958,7 +958,7 @@
     const SCHEMES = ['reps_scheme', 'intensity_scheme'];
 
     function defaultExercise() {
-      return { name: '', num_series: 3, suggested_weight: '', rest: '', notes: '',
+      return { name: '', num_series: 3, suggested_weight: '', rest: '', notes: '', superset_group: '',
         reps_scheme: { default: ['', '', ''], overrides: {} },
         intensity_scheme: { default: ['', '', ''], overrides: {} } };
     }
@@ -1227,9 +1227,17 @@
         el('tbody', {}, rows),
       ]);
 
+      const ssSel = el('select', {}, [['', '—'], ['A', 'A'], ['B', 'B'], ['C', 'C'], ['D', 'D'], ['E', 'E']].map(([v, l]) => {
+        const o = el('option', { value: v, text: l });
+        if ((ex.superset_group || '') === v) o.selected = true;
+        return o;
+      }));
+      ssSel.addEventListener('change', (e) => { ex.superset_group = e.target.value; redraw(); });
+
       return el('div', { class: 'card', style: 'margin-bottom:12px; padding:14px' }, [
         el('div', { class: 'ex-name-row' }, [
           el('div', { style: 'flex:1' }, nameInp),
+          ex.superset_group ? el('span', { class: 'badge badge-attiva', text: '🔗 Superset ' + ex.superset_group, style: 'align-self:center' }) : null,
           pickBtn,
           el('button', { class: 'btn btn-sm btn-danger', html: '🗑', title: 'Rimuovi esercizio',
             onClick: () => { d.exercises.splice(ei, 1); redraw(); } }),
@@ -1237,6 +1245,7 @@
         el('div', { class: 'grid-3', style: 'margin-top:10px' }, [
           labeled('N. serie', seriesInp), labeled('Peso suggerito', weightInp), labeled('Recupero', restInp),
         ]),
+        labeled('Superset (stesso codice = esercizi eseguiti insieme)', ssSel),
         labeled('Nota', noteInp),
         seriesTable,
       ]);
@@ -1371,7 +1380,10 @@
             }
             detail.appendChild(el('div', { style: 'margin:6px 0 14px' }, [
               el('div', { class: 'row-between', style: 'margin-bottom:4px' }, [
-                el('strong', { text: ex.name }),
+                el('strong', {}, [
+                  el('span', { text: ex.name }),
+                  ex.superset_group ? el('span', { class: 'badge badge-attiva', text: '🔗 ' + ex.superset_group, style: 'margin-left:6px' }) : null,
+                ]),
                 el('span', { class: 'muted', text: (ex.suggested_weight ? 'peso sugg. ' + ex.suggested_weight : '') + (ex.rest ? ' · rec ' + ex.rest : ''), style: 'font-size:12px' }),
               ]),
               ex.notes ? el('div', { class: 'muted', text: ex.notes, style: 'font-size:12.5px;margin-bottom:4px' }) : null,
