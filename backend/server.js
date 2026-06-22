@@ -40,10 +40,10 @@ async function resolveContext(req) {
   const token = req.get('X-Trainer-Token');
   if (token) {
     const [t] = await db.q(
-      'SELECT id, first_name, last_name FROM trainers WHERE console_token=? AND active=1',
+      'SELECT id, first_name, last_name, suspended, clients_unlocked FROM trainers WHERE console_token=? AND active=1',
       [token]
     );
-    if (t) return { role: 'trainer', trainerId: t.id, trainer: t };
+    if (t) return { role: 'trainer', trainerId: t.id, trainer: t, suspended: !!t.suspended, clientsUnlocked: !!t.clients_unlocked };
   }
   const clientToken = req.get('X-Client-Token');
   if (clientToken) {
@@ -53,8 +53,15 @@ async function resolveContext(req) {
   return { role: 'guest' };
 }
 
-api.use((req, _res, next) => {
-  resolveContext(req).then((ctx) => { req.ctx = ctx; next(); }).catch(next);
+api.use((req, res, next) => {
+  resolveContext(req).then((ctx) => {
+    req.ctx = ctx;
+    // Coach sospeso: può accedere e consultare (GET) ma non modificare nulla.
+    if (ctx.role === 'trainer' && ctx.suspended && req.method !== 'GET') {
+      return res.status(403).json({ error: 'Account sospeso dall\'amministratore. Non puoi effettuare modifiche.' });
+    }
+    next();
+  }).catch(next);
 });
 
 function requireAdmin(req, res, next) {
@@ -127,6 +134,7 @@ api.post('/auth/trainer', wrap(async (req, res) => {
     id: t.id, first_name: t.first_name, last_name: t.last_name, console_token: t.console_token,
     logo: t.logo, theme_accent: t.theme_accent, theme_mode: t.theme_mode,
     theme_bg: t.theme_bg, theme_surface: t.theme_surface,
+    suspended: t.suspended, clients_unlocked: t.clients_unlocked,
   });
 }));
 
@@ -134,7 +142,7 @@ api.post('/auth/trainer', wrap(async (req, res) => {
 api.get('/auth/trainer-by-token/:token', wrap(async (req, res) => {
   const [t] = await db.q(
     `SELECT id, first_name, last_name, console_token, logo,
-            theme_accent, theme_mode, theme_bg, theme_surface
+            theme_accent, theme_mode, theme_bg, theme_surface, suspended, clients_unlocked
      FROM trainers WHERE console_token=? AND active=1`,
     [req.params.token]
   );
@@ -236,8 +244,15 @@ function pick(body, fields) {
 }
 
 api.post('/customers', requireStaff, wrap(async (req, res) => {
+  // Limite gratuito: un coach non sbloccato può avere al massimo 2 clienti.
+  if (req.ctx.role === 'trainer' && !req.ctx.clientsUnlocked) {
+    const [cnt] = await db.q('SELECT COUNT(*) AS n FROM customers WHERE trainer_id=?', [req.ctx.trainerId]);
+    if (Number(cnt.n) >= 2) {
+      return res.status(403).json({ error: 'Hai raggiunto il limite gratuito di 2 clienti. Chiedi all\'amministratore di sbloccarne altri.' });
+    }
+  }
   const data = pick(req.body, CUSTOMER_FIELDS);
-  // Il trainer assegna il cliente a se stesso; l'admin puo' indicare trainer_id.
+  // Il coach assegna il cliente a se stesso; l'admin puo' indicare trainer_id.
   data.trainer_id = req.ctx.role === 'trainer' ? req.ctx.trainerId : (req.body.trainer_id || null);
   data.access_token = auth.randomToken(); // link personale permanente del cliente
   const cols = [...CUSTOMER_FIELDS, 'trainer_id', 'access_token'];
@@ -722,6 +737,7 @@ function trainerPublic(t) {
     logo: t.logo, theme_accent: t.theme_accent, theme_mode: t.theme_mode,
     theme_bg: t.theme_bg, theme_surface: t.theme_surface,
     sponsor_id: t.sponsor_id, invite_code: t.invite_code, commission_override: t.commission_override,
+    suspended: t.suspended, clients_unlocked: t.clients_unlocked,
   };
 }
 
@@ -829,6 +845,18 @@ api.put('/trainers/:id/commission', requireAdmin, wrap(async (req, res) => {
   ov = (ov === null || ov === '' || ov === 'auto' || ov === undefined) ? null : Number(ov);
   if (ov !== null && ![0, 5, 10].includes(ov)) return res.status(400).json({ error: 'Tasso non valido.' });
   await db.q('UPDATE trainers SET commission_override=? WHERE id=?', [ov, req.params.id]);
+  res.json({ ok: true });
+}));
+
+// Sospensione e sblocco clienti (controlli amministratore).
+api.put('/trainers/:id/flags', requireAdmin, wrap(async (req, res) => {
+  const sets = [];
+  const params = [];
+  if ('suspended' in req.body) { sets.push('suspended=?'); params.push(req.body.suspended ? 1 : 0); }
+  if ('clients_unlocked' in req.body) { sets.push('clients_unlocked=?'); params.push(req.body.clients_unlocked ? 1 : 0); }
+  if (!sets.length) return res.json({ ok: true });
+  params.push(req.params.id);
+  await db.q(`UPDATE trainers SET ${sets.join(', ')} WHERE id=?`, params);
   res.json({ ok: true });
 }));
 

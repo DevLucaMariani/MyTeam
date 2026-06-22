@@ -38,7 +38,7 @@
     const inputs = {};
     const card = el('div', { class: 'role-card' }, [
       el('img', { class: 'role-logo', src: 'assets/logo.png', alt: '' }),
-      el('h1', { text: 'Diventa Trainer' }),
+      el('h1', { text: 'Diventa Coach' }),
       el('p', { class: 'sub', text: `Invitato da ${sponsor.first_name} ${sponsor.last_name}. Compila per richiedere l'accesso: sarà attivato dall'amministratore.` }),
     ]);
     [['first_name', 'Nome'], ['last_name', 'Cognome'], ['email', 'Email'], ['phone', 'Telefono'],
@@ -57,7 +57,7 @@
         appRoot.appendChild(el('div', { class: 'role-screen' }, el('div', { class: 'role-card' }, [
           el('div', { class: 'ico', text: '✅', style: 'font-size:42px' }),
           el('h1', { text: 'Richiesta inviata!' }),
-          el('p', { class: 'sub', text: "Il tuo account è in attesa di approvazione dall'amministratore. Appena approvato potrai accedere come Trainer." }),
+          el('p', { class: 'sub', text: "Il tuo account è in attesa di approvazione dall'amministratore. Appena approvato potrai accedere come Coach." }),
           el('button', { class: 'btn btn-block', text: 'Vai alla home', onClick: () => goHome() }),
         ])));
       } catch (err) { toast(err.message || 'Registrazione non riuscita', 'err'); }
@@ -85,15 +85,15 @@
         el('button', { class: 'role-pick', onClick: () => goAdminLogin() }, [
           el('div', { class: 'ico', text: '🧑‍💼' }),
           el('h3', { text: 'Amministratore' }),
-          el('p', { text: 'Gestione dei trainer e supervisione generale.' }),
+          el('p', { text: 'Gestione dei coach e supervisione generale.' }),
         ]),
         el('button', { class: 'role-pick', onClick: () => goTrainerLogin() }, [
           el('div', { class: 'ico', text: '🧑‍🏫' }),
-          el('h3', { text: 'Trainer' }),
+          el('h3', { text: 'Coach' }),
           el('p', { text: 'La tua console: clienti, schede, nutrizione e monitoraggio.' }),
         ]),
       ]),
-      el('p', { class: 'role-local-note', text: '🏃 Sei un cliente? Apri il link personale che ti ha inviato il tuo trainer.' }),
+      el('p', { class: 'role-local-note', text: '🏃 Sei un cliente? Apri il link personale che ti ha inviato il tuo coach.' }),
       window.UI.copyrightLine(),
     ]));
     appRoot.appendChild(screen);
@@ -142,7 +142,7 @@
 
   function goTrainerLogin() {
     loginScreen({
-      title: 'Trainer',
+      title: 'Coach',
       subtitle: "Accedi con le credenziali che ti ha consegnato l'amministratore.",
       fields: [
         { name: 'username', label: 'Nome utente' },

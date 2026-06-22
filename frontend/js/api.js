@@ -46,6 +46,7 @@
     deleteTrainer: (id) => request('DELETE', `/trainers/${id}`),
     approveTrainer: (id) => request('POST', `/trainers/${id}/approve`),
     setTrainerCommission: (id, override) => request('PUT', `/trainers/${id}/commission`, { override }),
+    setTrainerFlags: (id, flags) => request('PUT', `/trainers/${id}/flags`, flags),
 
     // Sponsorizzazioni / compensi
     registerTrainer: (data) => request('POST', '/trainers/register', data),

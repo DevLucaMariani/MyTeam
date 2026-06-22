@@ -64,6 +64,10 @@ ALTER TABLE trainers ADD COLUMN IF NOT EXISTS sponsor_id INT;
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS invite_code VARCHAR(40);
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS commission_override TINYINT;
 ALTER TABLE trainers ADD UNIQUE INDEX uq_trainer_invite (invite_code);
+-- Controlli amministratore: sospensione (accede ma non opera) e sblocco clienti
+-- oltre il limite gratuito di 2.
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS suspended TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS clients_unlocked TINYINT(1) NOT NULL DEFAULT 0;
 
 -- Collega ogni cliente al proprio trainer e dagli un token personale per il
 -- link PWA (link permanente: si invia una volta, i contenuti si aggiornano).

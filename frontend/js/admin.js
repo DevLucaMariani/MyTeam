@@ -20,6 +20,19 @@
     else window.Theme.apply(window.Theme.loadAdmin());
   }
 
+  // Stato del coach corrente (per limiti e sospensione lato console).
+  const isTrainer = () => opts.role === 'trainer';
+  const isSuspended = () => isTrainer() && opts.trainer && Number(opts.trainer.suspended);
+  const clientsUnlocked = () => !isTrainer() || (opts.trainer && Number(opts.trainer.clients_unlocked));
+  const clientLimitReached = (count) => isTrainer() && !clientsUnlocked() && count >= 2;
+
+  // Pulsante "+ Nuovo cliente" che rispetta sospensione e limite gratuito.
+  function addCustomerButton(count) {
+    if (isSuspended()) return el('button', { class: 'btn', disabled: true, title: 'Account sospeso', html: '+ Nuovo cliente' });
+    if (clientLimitReached(count)) return el('button', { class: 'btn', disabled: true, title: 'Limite gratuito: 2 clienti. Chiedi allo staff di sbloccarne altri.', html: '🔒 Limite 2 clienti' });
+    return el('button', { class: 'btn btn-primary', onClick: () => openCustomerForm(), html: '+ Nuovo cliente' });
+  }
+
   function navigate(view, params) {
     state = Object.assign({ view }, params || {});
     render();
@@ -34,11 +47,11 @@
     ];
     // Solo l'amministratore gestisce i trainer e i compensi.
     if (opts.role === 'admin') {
-      items.splice(1, 0, { view: 'trainers', ico: '🧑‍🏫', label: 'Trainer' });
+      items.splice(1, 0, { view: 'trainers', ico: '🧑‍🏫', label: 'Coach' });
       items.push({ view: 'billing', ico: '💶', label: 'Compensi' });
     }
     // Il trainer può invitare altri trainer (sponsorizzazione).
-    if (opts.role === 'trainer') items.push({ view: 'invite', ico: '➕', label: 'Invita trainer' });
+    if (opts.role === 'trainer') items.push({ view: 'invite', ico: '➕', label: 'Invita coach' });
     items.push({ view: 'appearance', ico: '🎨', label: 'Aspetto' });
     return items;
   }
@@ -73,7 +86,8 @@
         el('img', { src: brandLogo, alt: '', style: 'width:32px;height:32px;object-fit:contain;border-radius:8px' }),
         el('span', { text: brandText }),
       ]),
-      opts.role === 'trainer' ? el('div', { text: 'Console Trainer', style: 'font-size:11px; opacity:.7; padding:0 16px 8px; letter-spacing:.04em; text-transform:uppercase' }) : null,
+      opts.role === 'trainer' ? el('div', { text: 'Console Coach', style: 'font-size:11px; opacity:.7; padding:0 16px 8px; letter-spacing:.04em; text-transform:uppercase' }) : null,
+      isSuspended() ? el('div', { text: '⛔ Account sospeso — sola lettura', style: 'font-size:12px; color:#fff; background:var(--danger); padding:8px 16px; margin:0 0 8px; font-weight:600' }) : null,
       ...navItems().map(navItem),
       el('div', { class: 'spacer' }),
       el('button', { class: 'nav-item exit', onClick: () => window.Router.goRole(),
@@ -173,17 +187,17 @@
 
   // ---- Trainer (solo amministratore) --------------------------------------
   async function renderTrainers(c) {
-    c.appendChild(topbar('Trainer', 'Istruttori e loro credenziali'));
+    c.appendChild(topbar('Coach', 'I tuoi coach e le loro credenziali'));
     loading(c);
     try {
       const trainers = await API.listTrainers();
       clear(c);
-      c.appendChild(topbar('Trainer', `${trainers.length} trainer`, [
-        el('button', { class: 'btn btn-primary', html: '+ Nuovo trainer', onClick: () => openTrainerForm() }),
+      c.appendChild(topbar('Coach', `${trainers.length} coach`, [
+        el('button', { class: 'btn btn-primary', html: '+ Nuovo coach', onClick: () => openTrainerForm() }),
       ]));
       const card = el('div', { class: 'card' });
       if (!trainers.length) {
-        card.appendChild(emptyState('Nessun trainer', 'Crea il primo trainer e consegnagli nome utente e password.'));
+        card.appendChild(emptyState('Nessun coach', 'Crea il primo coach e consegnagli nome utente e password.'));
       } else {
         const rows = trainers.map((t) => {
           const pending = !Number(t.active);
@@ -201,10 +215,21 @@
             ]
             : [
               el('button', { class: 'btn btn-sm btn-accent', html: '🔗 Invia accesso', onClick: () => openTrainerAccess(t) }),
+              el('button', { class: 'btn btn-sm', text: Number(t.clients_unlocked) ? 'Blocca a 2' : 'Sblocca clienti', onClick: async () => {
+                try { await API.setTrainerFlags(t.id, { clients_unlocked: !Number(t.clients_unlocked) }); toast('Aggiornato', 'ok'); navigate('trainers'); }
+                catch (err) { toast(err.message, 'err'); }
+              } }),
+              el('button', { class: 'btn btn-sm ' + (Number(t.suspended) ? 'btn-accent' : 'btn-danger'), text: Number(t.suspended) ? 'Riattiva' : 'Sospendi', onClick: () => {
+                const sus = !Number(t.suspended);
+                confirmDialog(sus ? `Sospendere ${t.first_name} ${t.last_name}? Potrà accedere ma non potrà operare.` : `Riattivare ${t.first_name} ${t.last_name}?`, async () => {
+                  try { await API.setTrainerFlags(t.id, { suspended: sus }); toast(sus ? 'Coach sospeso' : 'Coach riattivato', 'ok'); navigate('trainers'); }
+                  catch (err) { toast(err.message, 'err'); }
+                }, { danger: sus, confirmLabel: sus ? 'Sospendi' : 'Riattiva' });
+              } }),
               el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openTrainerForm(t) }),
               el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
-                confirmDialog(`Eliminare il trainer ${t.first_name} ${t.last_name}? I suoi clienti restano, ma senza trainer assegnato.`, async () => {
-                  try { await API.deleteTrainer(t.id); toast('Trainer eliminato', 'ok'); navigate('trainers'); }
+                confirmDialog(`Eliminare il coach ${t.first_name} ${t.last_name}? I suoi clienti restano, ma senza coach assegnato.`, async () => {
+                  try { await API.deleteTrainer(t.id); toast('Coach eliminato', 'ok'); navigate('trainers'); }
                   catch (err) { toast(err.message, 'err'); }
                 }, { danger: true, confirmLabel: 'Elimina' });
               } }),
@@ -216,6 +241,8 @@
                 el('div', {}, [
                   el('span', { text: `${t.first_name} ${t.last_name}`, style: 'font-weight:600' }),
                   pending ? el('span', { class: 'badge badge-bozza', text: 'In attesa', style: 'margin-left:8px' }) : null,
+                  Number(t.suspended) ? el('span', { class: 'badge badge-danger', text: 'Sospeso', style: 'margin-left:6px' }) : null,
+                  Number(t.clients_unlocked) ? el('span', { class: 'badge badge-attiva', text: 'Clienti sbloccati', style: 'margin-left:6px' }) : null,
                 ]),
                 el('div', { class: 'muted', text: '@' + t.username + (t.sponsor_id ? ' · sponsorizzato' : ''), style: 'font-size:12px' }),
               ]),
@@ -226,7 +253,7 @@
           ]);
         });
         card.appendChild(el('table', { class: 'table' }, [
-          el('thead', {}, el('tr', {}, ['Trainer', 'Telefono', 'Clienti', ''].map((h) => el('th', { text: h })))),
+          el('thead', {}, el('tr', {}, ['Coach', 'Telefono', 'Clienti', ''].map((h) => el('th', { text: h })))),
           el('tbody', {}, rows),
         ]));
       }
@@ -265,7 +292,7 @@
     f.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Foto (facoltativa)' }), fileInput, preview]));
 
     const m = modal({
-      title: existing ? 'Modifica trainer' : 'Nuovo trainer',
+      title: existing ? 'Modifica coach' : 'Nuovo coach',
       body: f,
       footer: [
         el('button', { class: 'btn', text: 'Annulla', onClick: () => m.close() }),
@@ -278,7 +305,7 @@
           try {
             if (existing) await API.updateTrainer(existing.id, data);
             else await API.createTrainer(data);
-            m.close(); toast('Trainer salvato', 'ok'); navigate('trainers');
+            m.close(); toast('Coach salvato', 'ok'); navigate('trainers');
           } catch (err) { toast(err.message, 'err'); }
         } }),
       ],
@@ -296,7 +323,7 @@
     const m = modal({
       title: `Accesso console — ${t.first_name} ${t.last_name}`,
       body: el('div', {}, [
-        el('p', { class: 'muted', text: 'Con questo link il trainer entra direttamente nella sua console, senza digitare la password. Invialo solo al trainer giusto. In alternativa può accedere dalla schermata "Trainer" con nome utente e password.' }),
+        el('p', { class: 'muted', text: 'Con questo link il coach entra direttamente nella sua console, senza digitare la password. Invialo solo al coach giusto. In alternativa può accedere dalla schermata "Coach" con nome utente e password.' }),
         el('div', { class: 'field' }, [linkInput]),
       ]),
       footer: [
@@ -311,7 +338,7 @@
 
   // ---- Compensi (solo amministratore) -------------------------------------
   async function renderBilling(c) {
-    c.appendChild(topbar('Compensi', 'Primi 2 clienti gratis per trainer; dal 3° si applica il tasso'));
+    c.appendChild(topbar('Compensi', 'Primi 2 clienti gratis per coach; dal 3° si applica il tasso'));
     loading(c);
     try {
       const rows = await API.listBilling();
@@ -320,7 +347,7 @@
       c.appendChild(topbar('Compensi', `Totale maturato: ${fmtEuro(total) || '€ 0,00'}`));
       const card = el('div', { class: 'card' });
       if (!rows.length) {
-        card.appendChild(emptyState('Nessun trainer attivo', 'Approva o crea un trainer per vedere i compensi.'));
+        card.appendChild(emptyState('Nessun coach attivo', 'Approva o crea un coach per vedere i compensi.'));
       } else {
         const trs = rows.map((r) => {
           const cur = (r.commission_override == null) ? 'auto' : String(r.commission_override);
@@ -347,32 +374,32 @@
           ]);
         });
         card.appendChild(el('table', { class: 'table' }, [
-          el('thead', {}, el('tr', {}, ['Trainer', 'Clienti', 'Portati', 'Tasso', 'Schede pag.', 'Imponibile', 'Compenso'].map((h) => el('th', { text: h })))),
+          el('thead', {}, el('tr', {}, ['Coach', 'Clienti', 'Portati', 'Tasso', 'Schede pag.', 'Imponibile', 'Compenso'].map((h) => el('th', { text: h })))),
           el('tbody', {}, trs),
         ]));
       }
       c.appendChild(card);
       c.appendChild(el('p', { class: 'muted', style: 'margin-top:12px; font-size:13px',
-        text: 'Il compenso è la percentuale sul prezzo delle schede dei clienti oltre i primi 2 (gratuiti). Il tasso scende a 5% in automatico quando un trainer porta 3 trainer sponsorizzati e attivi; puoi comunque forzarlo qui.' }));
+        text: 'Il compenso è la percentuale sul prezzo delle schede dei clienti oltre i primi 2 (gratuiti). Il tasso scende a 5% in automatico quando un coach porta 3 coach sponsorizzati e attivi; puoi comunque forzarlo qui.' }));
     } catch (err) { showError(c, err); }
   }
 
   // ---- Invita un trainer (solo trainer) -----------------------------------
   async function renderInvite(c) {
-    c.appendChild(topbar('Invita un trainer', 'Porta altri trainer e abbassa il tuo tasso'));
+    c.appendChild(topbar('Invita un coach', 'Porta altri coach e abbassa il tuo tasso'));
     loading(c);
     try {
       const me = await API.getMe();
       clear(c);
-      c.appendChild(topbar('Invita un trainer', `Tuo tasso attuale: ${me.rate}%`));
+      c.appendChild(topbar('Invita un coach', `Tuo tasso attuale: ${me.rate}%`));
       const link = `${window.location.origin}/?invite=${me.invite_code}`;
-      const msg = `Ciao! Unisciti a MyTeam come trainer con il mio invito: ${link}`;
+      const msg = `Ciao! Unisciti a MyTeam come coach con il mio invito: ${link}`;
       const wa = `https://wa.me/?text=${encodeURIComponent(msg)}`;
       const linkInput = el('input', { value: link, readonly: true, style: 'font-size:13px' });
       linkInput.addEventListener('click', () => linkInput.select());
       c.appendChild(el('div', { class: 'card' }, [
         el('h3', { text: '🔗 Il tuo link di invito' }),
-        el('p', { class: 'muted', text: "Chi si registra con questo link diventa un trainer in attesa di approvazione dell'amministratore. Con 3 trainer attivi portati da te, il tuo tasso scende dal 10% al 5%." }),
+        el('p', { class: 'muted', text: "Chi si registra con questo link diventa un coach in attesa di approvazione dell'amministratore. Con 3 coach attivi portati da te, il tuo tasso scende dal 10% al 5%." }),
         el('div', { class: 'field' }, [linkInput]),
         el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap' }, [
           el('button', { class: 'btn', html: '📋 Copia link', onClick: () => {
@@ -385,7 +412,7 @@
       c.appendChild(el('div', { class: 'card' }, [
         el('h3', { text: 'Il tuo riepilogo' }),
         el('div', { class: 'grid-3' }, [
-          infoLine('Trainer portati (attivi)', String(me.sponsored_count)),
+          infoLine('Coach portati (attivi)', String(me.sponsored_count)),
           infoLine('Clienti', `${me.clients_count} (primi ${me.free_clients} gratis)`),
           infoLine('Tasso attuale', me.rate + '%'),
           infoLine('Schede a pagamento', String(me.billable_plans)),
@@ -634,7 +661,7 @@
       const overview = await API.plansOverview();
       clear(c);
       c.appendChild(topbar('Dashboard', 'Panoramica della palestra', [
-        el('button', { class: 'btn btn-primary', onClick: () => openCustomerForm(), html: '+ Nuovo cliente' }),
+        addCustomerButton(customers.length),
       ]));
       const totalPlans = customers.reduce((s, x) => s + Number(x.plans_count || 0), 0);
       const activePlans = customers.reduce((s, x) => s + Number(x.active_plans || 0), 0);
@@ -698,7 +725,7 @@
       const customers = await API.listCustomers();
       clear(c);
       c.appendChild(topbar('Clienti', `${customers.length} clienti`, [
-        el('button', { class: 'btn btn-primary', onClick: () => openCustomerForm(), html: '+ Nuovo cliente' }),
+        addCustomerButton(customers.length),
       ]));
       const card = el('div', { class: 'card' });
       if (!customers.length) card.appendChild(emptyState('Nessun cliente', 'Aggiungi il primo cliente.'));
