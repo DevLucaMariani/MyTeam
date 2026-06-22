@@ -11,6 +11,9 @@
     root = container;
     opts = Object.assign({ role: 'admin' }, options || {});
     applyOwnTheme();
+    if (window.__mtHeartbeat) clearInterval(window.__mtHeartbeat);
+    API.ping().catch(() => {});
+    window.__mtHeartbeat = setInterval(() => API.ping().catch(() => {}), 60000);
     navigate('dashboard');
   }
 
@@ -244,6 +247,7 @@
                   pending ? el('span', { class: 'badge badge-bozza', text: 'In attesa', style: 'margin-left:8px' }) : null,
                   Number(t.suspended) ? el('span', { class: 'badge badge-danger', text: 'Sospeso', style: 'margin-left:6px' }) : null,
                   Number(t.clients_unlocked) ? el('span', { class: 'badge badge-attiva', text: 'Clienti sbloccati', style: 'margin-left:6px' }) : null,
+                  el('span', { style: 'margin-left:8px' }, window.UI.onlineBadge(t.last_seen_secs)),
                 ]),
                 el('div', { class: 'muted', text: '@' + t.username + (t.sponsor_id ? ' · sponsorizzato' : ''), style: 'font-size:12px' }),
               ]),
@@ -744,6 +748,7 @@
           el('div', { class: 'muted', text: cu.email || '—', style: 'font-size:12px' }),
         ]),
       ])),
+      el('td', {}, window.UI.onlineBadge(cu.last_seen_secs)),
       el('td', { text: cu.subscription || '—' }),
       el('td', {}, paymentBadge(cu)),
       el('td', { text: String(cu.plans_count || 0) }),
@@ -753,7 +758,7 @@
     ]));
     return el('table', { class: 'table' }, [
       el('thead', {}, el('tr', {}, [
-        el('th', { text: 'Cliente' }), el('th', { text: 'Abbonamento' }), el('th', { text: 'Pagamento' }),
+        el('th', { text: 'Cliente' }), el('th', { text: 'Online' }), el('th', { text: 'Abbonamento' }), el('th', { text: 'Pagamento' }),
         el('th', { text: 'Schede' }), el('th', { text: 'Stato' }),
       ])),
       el('tbody', {}, rows),

@@ -68,11 +68,14 @@ ALTER TABLE trainers ADD UNIQUE INDEX uq_trainer_invite (invite_code);
 -- oltre il limite gratuito di 2.
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS suspended TINYINT(1) NOT NULL DEFAULT 0;
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS clients_unlocked TINYINT(1) NOT NULL DEFAULT 0;
+-- Presenza online: ultimo accesso (aggiornato a ogni richiesta / heartbeat).
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP NULL DEFAULT NULL;
 
 -- Collega ogni cliente al proprio trainer e dagli un token personale per il
 -- link PWA (link permanente: si invia una volta, i contenuti si aggiornano).
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS trainer_id INT;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS access_token VARCHAR(64);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP NULL DEFAULT NULL;
 ALTER TABLE customers ADD UNIQUE INDEX uq_customer_token (access_token);
 
 CREATE TABLE IF NOT EXISTS plans (

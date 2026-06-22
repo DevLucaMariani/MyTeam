@@ -206,7 +206,7 @@
     'Hai una nuova notifica': 'You have a new notification',
     'bozza': 'draft', 'archiviata': 'archived',
     '— esegui insieme agli esercizi con lo stesso codice': '— perform together with the exercises sharing the same code',
-    'Aggiornamento settimana ': 'Week update ',
+    'mai connesso': 'never connected', 'Online': 'Online',
   };
 
   // Pattern per i testi dinamici (numeri, settimane, ecc.).
@@ -254,6 +254,11 @@
     { re: /^Rifiutare ed eliminare la richiesta di (.+)\?$/, en: (m) => 'Reject and delete the request from ' + m[1] + '?' },
     { re: /^Sospendere (.+)\? Potrà accedere ma non potrà operare\.$/, en: (m) => 'Suspend ' + m[1] + '? They can sign in but cannot operate.' },
     { re: /^Invitato da (.+)\. Compila per richiedere l'accesso: sarà attivato dall'amministratore\.$/, en: (m) => 'Invited by ' + m[1] + '. Fill in to request access: it will be activated by the administrator.' },
+    { re: /^visto adesso$/, en: () => 'seen just now' },
+    { re: /^visto (\d+) min fa$/, en: (m) => 'seen ' + m[1] + ' min ago' },
+    { re: /^visto (\d+) h fa$/, en: (m) => 'seen ' + m[1] + ' h ago' },
+    { re: /^visto ieri$/, en: () => 'seen yesterday' },
+    { re: /^visto (\d+) giorni fa$/, en: (m) => 'seen ' + m[1] + ' days ago' },
   ];
 
   function trOf(o) {

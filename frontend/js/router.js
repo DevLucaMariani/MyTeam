@@ -76,6 +76,7 @@
   function goRole() {
     window.API.clearAuth();
     window.Theme.reset();
+    if (window.__mtHeartbeat) clearInterval(window.__mtHeartbeat);
     clear(appRoot);
     const screen = el('div', { class: 'role-screen' }, el('div', { class: 'role-card' }, [
       el('img', { class: 'role-logo', src: 'assets/logo.png', alt: '' }),

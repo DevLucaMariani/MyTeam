@@ -158,5 +158,20 @@
     ]);
   }
 
-  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year };
+  // Presenza online (secondi dall'ultimo accesso, calcolati dal server).
+  function isOnlineSecs(secs) { return secs != null && secs < 180; }
+  function agoSecs(secs) {
+    if (secs == null) return 'mai';
+    if (secs < 60) return 'adesso';
+    if (secs < 3600) return Math.floor(secs / 60) + ' min fa';
+    if (secs < 86400) return Math.floor(secs / 3600) + ' h fa';
+    if (secs < 172800) return 'ieri';
+    return Math.floor(secs / 86400) + ' giorni fa';
+  }
+  function onlineBadge(secs) {
+    if (isOnlineSecs(secs)) return el('span', { class: 'badge badge-attiva', text: '🟢 Online' });
+    return el('span', { class: 'muted', text: secs == null ? 'mai connesso' : 'visto ' + agoSecs(secs), style: 'font-size:12px' });
+  }
+
+  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year, isOnlineSecs, agoSecs, onlineBadge };
 })();

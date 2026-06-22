@@ -26,6 +26,8 @@
       // Tutte le chiamate successive useranno questo token: il server verifica
       // che il cliente acceda solo ai PROPRI dati.
       API.setClientAuth(token);
+      if (window.__mtHeartbeat) clearInterval(window.__mtHeartbeat);
+      window.__mtHeartbeat = setInterval(() => API.ping().catch(() => {}), 60000);
       const data = await API.getClientByToken(token);
       customer = data.customer;
       trainer = data.trainer || null;

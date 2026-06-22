@@ -32,6 +32,7 @@
 
   window.API = {
     health: () => request('GET', '/health'),
+    ping: () => request('GET', '/ping'),
 
     // Autenticazione / ruoli
     setAdminAuth, setTrainerAuth, setClientAuth, clearAuth,

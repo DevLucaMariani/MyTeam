@@ -60,6 +60,9 @@ api.use((req, res, next) => {
     if (ctx.role === 'trainer' && ctx.suspended && req.method !== 'GET') {
       return res.status(403).json({ error: 'Account sospeso dall\'amministratore. Non puoi effettuare modifiche.' });
     }
+    // Presenza online: aggiorna "ultimo accesso" (fire-and-forget).
+    if (ctx.role === 'trainer') db.q('UPDATE trainers SET last_seen=NOW() WHERE id=?', [ctx.trainerId]).catch(() => {});
+    else if (ctx.role === 'client') db.q('UPDATE customers SET last_seen=NOW() WHERE id=?', [ctx.customerId]).catch(() => {});
     next();
   }).catch(next);
 });
@@ -117,6 +120,9 @@ api.get('/health', wrap(async (_req, res) => {
   await db.q('SELECT 1');
   res.json({ ok: true });
 }));
+
+// Heartbeat presenza: l'aggiornamento di last_seen avviene nel middleware sopra.
+api.get('/ping', wrap(async (_req, res) => { res.json({ ok: true }); }));
 
 // ---- Login (admin / trainer) ---------------------------------------------
 api.post('/auth/admin', wrap(async (req, res) => {
@@ -210,6 +216,7 @@ api.get('/customers', requireStaff, wrap(async (req, res) => {
   const onlyMine = req.ctx.role === 'trainer';
   const rows = await db.q(
     `SELECT c.*,
+            TIMESTAMPDIFF(SECOND, c.last_seen, NOW()) AS last_seen_secs,
             (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id) AS plans_count,
             (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id AND p.status='attiva') AS active_plans
      FROM customers c ${onlyMine ? 'WHERE c.trainer_id = :tid' : ''} ORDER BY c.last_name, c.first_name`,
@@ -778,6 +785,7 @@ async function trainerBilling(t) {
 api.get('/trainers', requireAdmin, wrap(async (_req, res) => {
   const rows = await db.q(
     `SELECT t.*,
+            TIMESTAMPDIFF(SECOND, t.last_seen, NOW()) AS last_seen_secs,
             (SELECT COUNT(*) FROM customers c WHERE c.trainer_id = t.id) AS customers_count,
             (SELECT COUNT(*) FROM trainers s WHERE s.sponsor_id = t.id AND s.active=1) AS sponsored_count
      FROM trainers t ORDER BY t.active ASC, t.last_name, t.first_name`
@@ -787,6 +795,7 @@ api.get('/trainers', requireAdmin, wrap(async (_req, res) => {
     customers_count: t.customers_count,
     sponsored_count: Number(t.sponsored_count) || 0,
     rate: effectiveRate(t, Number(t.sponsored_count) || 0),
+    last_seen_secs: t.last_seen_secs,
   })));
 }));
 
