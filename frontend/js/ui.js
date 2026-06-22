@@ -210,5 +210,40 @@
     return el('a', { class: 'btn btn-sm', href: u, target: '_blank', html: '▶ Guarda dimostrazione' });
   }
 
-  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot, exerciseMedia };
+  // ---- Notifiche push (opt-in) --------------------------------------------
+  function urlB64ToUint8(base64) {
+    const pad = '='.repeat((4 - (base64.length % 4)) % 4);
+    const b = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(b);
+    const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+  async function enablePush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !window.Notification) {
+      toast('Notifiche non supportate su questo dispositivo', 'err'); return false;
+    }
+    let key = null;
+    try { const r = await window.API.getPushKey(); key = r && r.key; } catch (e) { key = null; }
+    if (!key) { toast('Notifiche non ancora configurate', 'err'); return false; }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast('Permesso notifiche negato', 'err'); return false; }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(key) });
+      await window.API.subscribePush(sub.toJSON ? sub.toJSON() : sub);
+      toast('Notifiche attivate', 'ok');
+      return true;
+    } catch (e) { toast('Attivazione notifiche non riuscita', 'err'); return false; }
+  }
+  // Pulsante opt-in che riflette lo stato del permesso.
+  function pushButton() {
+    const supported = ('serviceWorker' in navigator) && ('PushManager' in window) && window.Notification;
+    const granted = supported && Notification.permission === 'granted';
+    const b = el('button', { class: 'btn btn-sm', html: granted ? '🔔 Notifiche attive' : '🔔 Attiva notifiche' });
+    b.addEventListener('click', async () => { const ok = await enablePush(); if (ok) b.innerHTML = '🔔 Notifiche attive'; });
+    return b;
+  }
+
+  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot, exerciseMedia, pushButton };
 })();

@@ -3,10 +3,36 @@
 
 const path = require('path');
 const express = require('express');
+const crypto = require('crypto');
 const db = require('./db');
 const auth = require('./auth');
+const webpush = require('web-push');
 const pdfImport = require('./lib/pdf-import');
 const { seedDemo, seedCatalog } = require('./seed');
+
+// ---- Notifiche push (Web Push, VAPID) ------------------------------------
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC || '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE || '';
+const PUSH_ENABLED = !!(VAPID_PUBLIC && VAPID_PRIVATE);
+if (PUSH_ENABLED) {
+  try { webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:mariani.pwine@gmail.com', VAPID_PUBLIC, VAPID_PRIVATE); }
+  catch (e) { console.error('[push] chiavi VAPID non valide:', e.message); }
+}
+
+// Invia una push a tutte le sottoscrizioni di un destinatario (fire-and-forget).
+async function sendPush(audience, ownerId, payload) {
+  if (!PUSH_ENABLED || !ownerId) return;
+  const subs = await db.q('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE audience=? AND owner_id=?', [audience, ownerId]);
+  await Promise.all(subs.map(async (s) => {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify(payload));
+    } catch (err) {
+      if (err && (err.statusCode === 404 || err.statusCode === 410)) {
+        await db.q('DELETE FROM push_subscriptions WHERE id=?', [s.id]).catch(() => {});
+      }
+    }
+  }));
+}
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -123,6 +149,25 @@ api.get('/health', wrap(async (_req, res) => {
 
 // Heartbeat presenza: l'aggiornamento di last_seen avviene nel middleware sopra.
 api.get('/ping', wrap(async (_req, res) => { res.json({ ok: true }); }));
+
+// ---- Notifiche push: chiave pubblica + sottoscrizione --------------------
+api.get('/push/key', wrap(async (_req, res) => { res.json({ key: PUSH_ENABLED ? VAPID_PUBLIC : null }); }));
+
+api.post('/push/subscribe', requireClientOrStaff, wrap(async (req, res) => {
+  const sub = req.body.subscription || req.body;
+  if (!sub || !sub.endpoint || !sub.keys) return res.status(400).json({ error: 'Subscription non valida.' });
+  if (req.ctx.role === 'admin') return res.json({ ok: true }); // l'admin non riceve push
+  const audience = req.ctx.role === 'client' ? 'client' : 'coach';
+  const ownerId = req.ctx.role === 'client' ? req.ctx.customerId : req.ctx.trainerId;
+  const hash = crypto.createHash('sha256').update(sub.endpoint).digest('hex');
+  await db.q(
+    `INSERT INTO push_subscriptions (audience, owner_id, endpoint, endpoint_hash, p256dh, auth)
+     VALUES (?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE audience=VALUES(audience), owner_id=VALUES(owner_id), p256dh=VALUES(p256dh), auth=VALUES(auth)`,
+    [audience, ownerId, sub.endpoint, hash, sub.keys.p256dh, sub.keys.auth]
+  );
+  res.json({ ok: true });
+}));
 
 // ---- Login (admin / trainer) ---------------------------------------------
 api.post('/auth/admin', wrap(async (req, res) => {
@@ -445,6 +490,7 @@ api.post('/plans/:id/activate', requireStaff, wrap(async (req, res) => {
     'INSERT INTO notifications (type, audience, customer_id, plan_id, message) VALUES (?,?,?,?,?)',
     ['new_plan', 'client', info.customer_id, planId, `È disponibile una nuova scheda per te: "${info.name}". Buon allenamento!`]
   );
+  sendPush('client', info.customer_id, { title: 'MyTeam', body: `È disponibile una nuova scheda: "${info.name}"`, url: '/' }).catch(() => {});
   res.json(await loadFullPlan(planId));
 }));
 
@@ -617,6 +663,10 @@ api.post('/plans/:id/weekly-updates', requireClientOrStaff, wrap(async (req, res
       'INSERT INTO notifications (type, customer_id, plan_id, week_number, message) VALUES (?,?,?,?,?)',
       ['weekly_update', info.customer_id, planId, week, msg]
     );
+    const [own] = await db.q('SELECT trainer_id FROM customers WHERE id=?', [info.customer_id]);
+    if (own && own.trainer_id) {
+      sendPush('coach', own.trainer_id, { title: 'MyTeam', body: `${info.first_name} ${info.last_name}: aggiornamento sett. ${week} (${percent}%)`, url: '/' }).catch(() => {});
+    }
   }
   res.status(201).json({ ok: true, exercises_done: doneCount, total_exercises: total, percent_complete: percent });
 }));

@@ -218,6 +218,14 @@
     'Nessun peso registrato per questo esercizio.': 'No weight recorded for this exercise.',
     // Timer recupero
     '⏱ Recupero': '⏱ Rest', 'Stop': 'Stop',
+    // Notifiche push
+    '🔔 Attiva notifiche': '🔔 Enable notifications', '🔔 Notifiche attive': '🔔 Notifications on',
+    'Notifiche attivate': 'Notifications enabled', 'Permesso notifiche negato': 'Notification permission denied',
+    'Notifiche non supportate su questo dispositivo': 'Notifications not supported on this device',
+    'Notifiche non ancora configurate': 'Notifications not configured yet',
+    'Attivazione notifiche non riuscita': 'Could not enable notifications',
+    'Attiva gli avvisi per essere notificato quando il tuo coach pubblica o aggiorna la scheda.': 'Turn on alerts to be notified when your coach publishes or updates your plan.',
+    "Su iPhone funziona solo se installi l'app nella schermata Home.": 'On iPhone it only works if you install the app to the Home screen.',
   };
 
   // Pattern per i testi dinamici (numeri, settimane, ecc.).

@@ -231,3 +231,16 @@ CREATE TABLE IF NOT EXISTS progress_photos (
   FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Sottoscrizioni alle notifiche push (Web Push). audience: 'coach' | 'client'.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  audience      VARCHAR(20) NOT NULL,
+  owner_id      INT NOT NULL,
+  endpoint      TEXT NOT NULL,
+  endpoint_hash CHAR(64) NOT NULL,
+  p256dh        VARCHAR(255) NOT NULL,
+  auth          VARCHAR(255) NOT NULL,
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_push_hash (endpoint_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

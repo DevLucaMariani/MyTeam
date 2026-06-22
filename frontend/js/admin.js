@@ -97,6 +97,7 @@
         }, [el('span', { class: 'ico', text: '↩' }), el('span', { text: 'Esci' })]),
       el('button', { class: 'nav-item', style: 'opacity:.65; font-size:12px', onClick: () => window.UI.showCredits(),
         }, [el('span', { class: 'ico', text: 'ⓘ' }), el('span', { text: 'Credits' })]),
+      opts.role === 'trainer' ? el('div', { style: 'padding:8px 14px' }, window.UI.pushButton()) : null,
       el('div', { style: 'padding:8px 14px' }, window.I18N.toggleEl()),
     ]);
 

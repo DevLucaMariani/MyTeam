@@ -33,6 +33,8 @@
   window.API = {
     health: () => request('GET', '/health'),
     ping: () => request('GET', '/ping'),
+    getPushKey: () => request('GET', '/push/key'),
+    subscribePush: (subscription) => request('POST', '/push/subscribe', { subscription }),
 
     // Autenticazione / ruoli
     setAdminAuth, setTrainerAuth, setClientAuth, clearAuth,

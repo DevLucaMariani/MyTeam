@@ -176,6 +176,7 @@
     }
     if (!plan) {
       b.appendChild(noPlan());
+      b.appendChild(pushCard());
       const st = storicoCard(); if (st) b.appendChild(st);
       if (trainer) b.appendChild(trainerCard());
       b.appendChild(window.UI.copyrightLine());
@@ -209,9 +210,20 @@
       el('p', { class: 'muted', text: 'Invia l\'aggiornamento settimanale e carica le foto.' }),
     ]));
 
+    b.appendChild(pushCard());
     const st = storicoCard(); if (st) b.appendChild(st);
     if (trainer) b.appendChild(trainerCard());
     b.appendChild(window.UI.copyrightLine());
+  }
+
+  // Card opt-in notifiche push.
+  function pushCard() {
+    return el('div', { class: 'client-card' }, [
+      el('h3', { text: 'Notifiche' }),
+      el('p', { class: 'muted', text: 'Attiva gli avvisi per essere notificato quando il tuo coach pubblica o aggiorna la scheda.' }),
+      window.UI.pushButton(),
+      el('p', { class: 'muted', text: "Su iPhone funziona solo se installi l'app nella schermata Home.", style: 'font-size:11.5px; margin-top:6px' }),
+    ]);
   }
 
   function noPlan() {

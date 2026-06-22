@@ -1,7 +1,7 @@
 /* Service worker minimale: cache "app shell" per consultazione offline.
    I dati restano sul backend locale; qui memorizziamo solo i file statici.
    Strategia: NETWORK-FIRST (online -> sempre l'ultima versione; offline -> cache). */
-const CACHE = 'client-configurator-v5';
+const CACHE = 'client-configurator-v6';
 const SHELL = [
   './',
   './index.html',
@@ -43,5 +43,30 @@ self.addEventListener('fetch', (e) => {
         return res;
       })
       .catch(() => caches.match(e.request))
+  );
+});
+
+// ---- Notifiche push -------------------------------------------------------
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) { data = { body: e.data && e.data.text() }; }
+  const title = data.title || 'MyTeam';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    icon: './assets/logo.png',
+    badge: './assets/logo.png',
+    data: { url: data.url || './' },
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ('focus' in c) return c.focus(); }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+      return null;
+    })
   );
 });
