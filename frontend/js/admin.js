@@ -243,6 +243,7 @@
               t.photo ? el('img', { src: t.photo, alt: '', style: 'width:36px;height:36px;border-radius:50%;object-fit:cover' }) : el('span', { class: 'avatar', text: initials(t.first_name, t.last_name) }),
               el('div', {}, [
                 el('div', {}, [
+                  window.UI.onlineDot(t.last_seen_secs),
                   el('span', { text: `${t.first_name} ${t.last_name}`, style: 'font-weight:600' }),
                   pending ? el('span', { class: 'badge badge-bozza', text: 'In attesa', style: 'margin-left:8px' }) : null,
                   Number(t.suspended) ? el('span', { class: 'badge badge-danger', text: 'Sospeso', style: 'margin-left:6px' }) : null,
@@ -690,7 +691,7 @@
             onClick: () => navigate('monitor', { planId: p.id, customerId: p.customer_id }) }, [
             el('td', {}, el('div', { class: 'cell-name' }, [
               el('span', { class: 'avatar', text: initials(p.first_name, p.last_name) }),
-              el('div', { text: `${p.first_name} ${p.last_name}`, style: 'font-weight:600' }),
+              el('div', { style: 'font-weight:600' }, [window.UI.onlineDot(p.last_seen_secs), `${p.first_name} ${p.last_name}`]),
             ])),
             el('td', { text: p.name }),
             el('td', { class: 'muted', text: (p.start_date || p.end_date) ? `${fmtDate(p.start_date)} → ${fmtDate(p.end_date)}` : '—' }),
@@ -744,7 +745,7 @@
       el('td', {}, el('div', { class: 'cell-name' }, [
         el('span', { class: 'avatar', text: initials(cu.first_name, cu.last_name) }),
         el('div', {}, [
-          el('div', { text: `${cu.first_name} ${cu.last_name}`, style: 'font-weight:600' }),
+          el('div', { style: 'font-weight:600' }, [window.UI.onlineDot(cu.last_seen_secs), `${cu.first_name} ${cu.last_name}`]),
           el('div', { class: 'muted', text: cu.email || '—', style: 'font-size:12px' }),
         ]),
       ])),
@@ -841,7 +842,7 @@
       const cu = await API.getCustomer(state.customerId);
       const plans = await API.customerPlans(state.customerId);
       clear(c);
-      c.appendChild(topbar(`${cu.first_name} ${cu.last_name}`, 'Clienti › Dettaglio', [
+      c.appendChild(topbar(`${window.UI.isOnlineSecs(cu.last_seen_secs) ? '🟢 ' : ''}${cu.first_name} ${cu.last_name}`, 'Clienti › Dettaglio', [
         el('button', { class: 'btn', text: '← Indietro', onClick: () => navigate('customers') }),
         el('button', { class: 'btn', text: 'Modifica', onClick: () => openCustomerForm(cu) }),
         el('button', { class: 'btn btn-primary', html: '+ Nuova scheda', onClick: () => openPlanEditor(null, cu.id) }),

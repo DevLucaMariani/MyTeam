@@ -227,7 +227,7 @@ api.get('/customers', requireStaff, wrap(async (req, res) => {
 
 api.get('/customers/:id', requireStaff, wrap(async (req, res) => {
   if (!(await guardCustomer(req, res, req.params.id))) return;
-  const [c] = await db.q('SELECT * FROM customers WHERE id=?', [req.params.id]);
+  const [c] = await db.q('SELECT c.*, TIMESTAMPDIFF(SECOND, c.last_seen, NOW()) AS last_seen_secs FROM customers c WHERE c.id=?', [req.params.id]);
   if (!c) return res.status(404).json({ error: 'Cliente non trovato' });
   res.json(c);
 }));
@@ -369,7 +369,7 @@ api.get('/plans/overview', requireStaff, wrap(async (req, res) => {
   const onlyMine = req.ctx.role === 'trainer';
   res.json(await db.q(
     `SELECT p.id, p.name, p.status, p.duration_weeks, p.start_date, p.end_date, p.customer_id,
-            c.first_name, c.last_name
+            c.first_name, c.last_name, TIMESTAMPDIFF(SECOND, c.last_seen, NOW()) AS last_seen_secs
      FROM plans p JOIN customers c ON c.id = p.customer_id
      WHERE p.status = 'attiva' ${onlyMine ? 'AND c.trainer_id = :tid' : ''}
      ORDER BY p.end_date IS NULL, p.end_date ASC`,

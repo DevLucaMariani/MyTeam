@@ -172,6 +172,10 @@
     if (isOnlineSecs(secs)) return el('span', { class: 'badge badge-attiva', text: '🟢 Online' });
     return el('span', { class: 'muted', text: secs == null ? 'mai connesso' : 'visto ' + agoSecs(secs), style: 'font-size:12px' });
   }
+  // Pallino verde inline da mettere accanto al nome (solo se online).
+  function onlineDot(secs) {
+    return isOnlineSecs(secs) ? el('span', { class: 'online-dot', title: 'Online' }) : null;
+  }
 
-  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year, isOnlineSecs, agoSecs, onlineBadge };
+  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot };
 })();
