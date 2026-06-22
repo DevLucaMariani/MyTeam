@@ -198,6 +198,15 @@
     'Limite gratuito: 2 clienti. Chiedi allo staff di sbloccarne altri.': 'Free limit: 2 clients. Ask the staff to unlock more.',
     // Titolo pagina
     'MyTeam — Gestione Team': 'MyTeam — Team management',
+    // Conferme statiche / badge / mancanti
+    'Eliminare definitivamente il cliente e tutte le sue schede?': 'Permanently delete the client and all their plans?',
+    'Eliminare questa foto?': 'Delete this photo?',
+    'Eliminare questa notifica?': 'Delete this notification?',
+    "Seleziona un'immagine": 'Select an image',
+    'Hai una nuova notifica': 'You have a new notification',
+    'bozza': 'draft', 'archiviata': 'archived',
+    '— esegui insieme agli esercizi con lo stesso codice': '— perform together with the exercises sharing the same code',
+    'Aggiornamento settimana ': 'Week update ',
   };
 
   // Pattern per i testi dinamici (numeri, settimane, ecc.).
@@ -230,6 +239,21 @@
     { re: /^peso sugg\. (.+)$/, en: (m) => 'sugg. weight ' + m[1] },
     { re: /^Stai personalizzando solo la settimana (\d+)\. Le altre restano sul "Default"\.$/, en: (m) => 'You are customizing only week ' + m[1] + '. The others stay on "Default".' },
     { re: /^(\d+) trainer$/, en: (m) => m[1] + ' coaches' },
+    { re: /^(\d+) serie( .+)?$/, en: (m) => m[1] + ' sets' + (m[2] || '') },
+    { re: /^(\d+) \(primi (\d+) gratis\)$/, en: (m) => m[1] + ' (first ' + m[2] + ' free)' },
+    { re: /^(\d+) clienti · (\d+)%$/, en: (m) => m[1] + ' clients · ' + m[2] + '%' },
+    { re: /^Automatico \((\d+)%\)$/, en: (m) => 'Automatic (' + m[1] + '%)' },
+    { re: /^📋 (.+) · (\d+) settimane$/, en: (m) => '📋 ' + m[1] + ' · ' + m[2] + ' weeks' },
+    { re: /^Monitoraggio — (.+)$/, en: (m) => 'Monitoring — ' + m[1] },
+    { re: /^Progressi del cliente( · .+)?$/, en: (m) => 'Client progress' + (m[1] || '') },
+    { re: /^· rec (.+)$/, en: (m) => '· rest ' + m[1] },
+    { re: /^Eliminare "(.+)" dal catalogo\?$/, en: (m) => 'Delete "' + m[1] + '" from the catalog?' },
+    { re: /^Eliminare il coach (.+)\? I suoi clienti restano, ma senza coach assegnato\.$/, en: (m) => 'Delete coach ' + m[1] + '? Their clients remain, but with no assigned coach.' },
+    { re: /^Eliminare la scheda "(.+)"\? L'azione è definitiva e rimuove anche progressi e foto collegati\.$/, en: (m) => 'Delete the plan "' + m[1] + '"? This is permanent and also removes linked progress and photos.' },
+    { re: /^Riattivare (.+)\?$/, en: (m) => 'Reactivate ' + m[1] + '?' },
+    { re: /^Rifiutare ed eliminare la richiesta di (.+)\?$/, en: (m) => 'Reject and delete the request from ' + m[1] + '?' },
+    { re: /^Sospendere (.+)\? Potrà accedere ma non potrà operare\.$/, en: (m) => 'Suspend ' + m[1] + '? They can sign in but cannot operate.' },
+    { re: /^Invitato da (.+)\. Compila per richiedere l'accesso: sarà attivato dall'amministratore\.$/, en: (m) => 'Invited by ' + m[1] + '. Fill in to request access: it will be activated by the administrator.' },
   ];
 
   function trOf(o) {

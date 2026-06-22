@@ -205,7 +205,7 @@
           const actions = pending
             ? [
               el('button', { class: 'btn btn-sm btn-accent', text: '✓ Approva', onClick: async () => {
-                try { await API.approveTrainer(t.id); toast('Trainer approvato', 'ok'); navigate('trainers'); }
+                try { await API.approveTrainer(t.id); toast('Coach approvato', 'ok'); navigate('trainers'); }
                 catch (err) { toast(err.message, 'err'); }
               } }),
               el('button', { class: 'btn btn-sm btn-danger', text: 'Rifiuta', onClick: () => {
