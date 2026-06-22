@@ -207,6 +207,17 @@
     'bozza': 'draft', 'archiviata': 'archived',
     '— esegui insieme agli esercizi con lo stesso codice': '— perform together with the exercises sharing the same code',
     'mai connesso': 'never connected', 'Online': 'Online',
+    // Media esercizi
+    'Media dimostrativo (link immagine/GIF/YouTube)': 'Demo media (image/GIF/YouTube link)',
+    '▶ Guarda dimostrazione': '▶ Watch demo', 'Dimostrazione': 'Demonstration',
+    'https://… (immagine, GIF o video YouTube)': 'https://… (image, GIF or YouTube video)',
+    // Grafici progressi
+    'Completamento per settimana': 'Weekly completion', 'Progressione peso': 'Weight progression',
+    'Seleziona esercizio': 'Select exercise', 'Andamento': 'Trends',
+    'Ancora nessun aggiornamento inviato.': 'No update sent yet.',
+    'Nessun peso registrato per questo esercizio.': 'No weight recorded for this exercise.',
+    // Timer recupero
+    '⏱ Recupero': '⏱ Rest', 'Stop': 'Stop',
   };
 
   // Pattern per i testi dinamici (numeri, settimane, ecc.).

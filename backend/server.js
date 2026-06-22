@@ -164,7 +164,7 @@ function parseRepsArray(raw) {
 }
 
 api.get('/exercise-catalog', wrap(async (_req, res) => {
-  const rows = await db.q('SELECT id, name, muscle_group, default_series, default_reps, default_intensity FROM exercise_catalog ORDER BY muscle_group, name');
+  const rows = await db.q('SELECT id, name, muscle_group, default_series, default_reps, default_intensity, media_url FROM exercise_catalog ORDER BY muscle_group, name');
   rows.forEach((r) => {
     r.default_reps = parseRepsArray(r.default_reps);
     r.default_intensity = parseRepsArray(r.default_intensity);
@@ -175,16 +175,16 @@ api.get('/exercise-catalog', wrap(async (_req, res) => {
 function catalogDefaults(body) {
   const series = body.default_series != null && body.default_series !== '' ? Number(body.default_series) : null;
   const arr = (v) => (Array.isArray(v) && v.length ? JSON.stringify(v.map(String)) : null);
-  return { series, reps: arr(body.default_reps), intensity: arr(body.default_intensity) };
+  return { series, reps: arr(body.default_reps), intensity: arr(body.default_intensity), media: (body.media_url || '').trim() || null };
 }
 
 api.post('/exercise-catalog', wrap(async (req, res) => {
   const name = (req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Nome obbligatorio' });
-  const { series, reps, intensity } = catalogDefaults(req.body);
+  const { series, reps, intensity, media } = catalogDefaults(req.body);
   try {
-    const r = await db.q('INSERT INTO exercise_catalog (name, muscle_group, default_series, default_reps, default_intensity) VALUES (?,?,?,?,?)',
-      [name, (req.body.muscle_group || '').trim() || null, series, reps, intensity]);
+    const r = await db.q('INSERT INTO exercise_catalog (name, muscle_group, default_series, default_reps, default_intensity, media_url) VALUES (?,?,?,?,?,?)',
+      [name, (req.body.muscle_group || '').trim() || null, series, reps, intensity, media]);
     res.status(201).json({ id: r.insertId });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Esercizio gia\' presente in catalogo' });
@@ -195,10 +195,10 @@ api.post('/exercise-catalog', wrap(async (req, res) => {
 api.put('/exercise-catalog/:id', wrap(async (req, res) => {
   const name = (req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Nome obbligatorio' });
-  const { series, reps, intensity } = catalogDefaults(req.body);
+  const { series, reps, intensity, media } = catalogDefaults(req.body);
   try {
-    await db.q('UPDATE exercise_catalog SET name=?, muscle_group=?, default_series=?, default_reps=?, default_intensity=? WHERE id=?',
-      [name, (req.body.muscle_group || '').trim() || null, series, reps, intensity, req.params.id]);
+    await db.q('UPDATE exercise_catalog SET name=?, muscle_group=?, default_series=?, default_reps=?, default_intensity=?, media_url=? WHERE id=?',
+      [name, (req.body.muscle_group || '').trim() || null, series, reps, intensity, media, req.params.id]);
     res.json({ ok: true });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Esiste gia\' un esercizio con questo nome' });
@@ -341,7 +341,9 @@ async function loadFullPlan(planId) {
   if (!plan) return null;
   const days = await db.q('SELECT * FROM plan_days WHERE plan_id=? ORDER BY position, id', [planId]);
   const exercises = await db.q(
-    `SELECT e.* FROM plan_exercises e
+    `SELECT e.*,
+            (SELECT c.media_url FROM exercise_catalog c WHERE c.name = e.name LIMIT 1) AS media_url
+     FROM plan_exercises e
      JOIN plan_days d ON d.id = e.day_id
      WHERE d.plan_id=? ORDER BY e.position, e.id`,
     [planId]

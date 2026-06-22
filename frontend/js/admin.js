@@ -593,6 +593,7 @@
       num_series: (existing && existing.default_series) ? Number(existing.default_series) : 3,
       reps: (existing && Array.isArray(existing.default_reps)) ? existing.default_reps.slice() : [],
       intensity: (existing && Array.isArray(existing.default_intensity)) ? existing.default_intensity.slice() : [],
+      media_url: (existing && existing.media_url) || '',
     };
     state.reps = fit(state.reps, state.num_series);
     state.intensity = fit(state.intensity, state.num_series);
@@ -635,6 +636,13 @@
           el('tbody', {}, rows),
         ]),
       ]));
+
+      const mediaInp = el('input', { value: state.media_url, placeholder: 'https://… (immagine, GIF o video YouTube)' });
+      mediaInp.addEventListener('input', (e) => { state.media_url = e.target.value; });
+      const mediaField = el('div', { class: 'field' }, [el('label', { text: 'Media dimostrativo (link immagine/GIF/YouTube)' }), mediaInp]);
+      const prev = window.UI.exerciseMedia(state.media_url);
+      if (prev) mediaField.appendChild(prev);
+      body.appendChild(mediaField);
     }
     redrawForm();
 
@@ -646,7 +654,8 @@
         el('button', { class: 'btn btn-primary', text: 'Salva', onClick: async () => {
           if (!state.name.trim()) { toast('Il nome è obbligatorio', 'err'); return; }
           const data = { name: state.name.trim(), muscle_group: state.muscle_group.trim(),
-            default_series: state.num_series, default_reps: state.reps, default_intensity: state.intensity };
+            default_series: state.num_series, default_reps: state.reps, default_intensity: state.intensity,
+            media_url: state.media_url.trim() };
           try {
             if (existing) await API.updateCatalogExercise(existing.id, data);
             else await API.createCatalogExercise(data);
@@ -1371,6 +1380,39 @@
         el('button', { class: 'btn', text: 'Apri scheda', onClick: () => openPlanEditor(plan.id) }),
       ]));
 
+      // Grafici andamento (completamento + progressione peso)
+      let allLogs = [];
+      try { allLogs = await API.getLogs(state.planId); } catch (e) { allLogs = []; }
+      const chartsCard = el('div', { class: 'card' }, [el('h3', { text: 'Andamento' })]);
+      const compPts = updates.slice().sort((a, x) => a.week_number - x.week_number)
+        .map((u) => ({ label: 'S' + u.week_number, value: Number(u.percent_complete) || 0 }));
+      chartsCard.appendChild(el('div', { class: 'section-title' }, [el('h4', { text: 'Completamento per settimana' })]));
+      if (compPts.length) chartsCard.appendChild(window.Charts.line(compPts, { suffix: '%', max: 100 }));
+      else chartsCard.appendChild(el('p', { class: 'muted', text: 'Nessun aggiornamento inviato dal cliente.' }));
+      const exL = [];
+      (plan.days || []).forEach((d) => d.exercises.forEach((e) => { if (!exL.find((x) => x.id === e.id)) exL.push({ id: e.id, name: e.name }); }));
+      if (exL.length) {
+        const sel = el('select', {}, exL.map((e) => el('option', { value: e.id, text: e.name })));
+        const holder = el('div', {});
+        const draw = () => {
+          clear(holder);
+          const exId = Number(sel.value); const bw = {};
+          allLogs.filter((l) => Number(l.exercise_id) === exId).forEach((l) => {
+            const v = parseFloat(String(l.actual_weight || '').replace(',', '.'));
+            if (!Number.isNaN(v)) bw[l.week_number] = Math.max(bw[l.week_number] || 0, v);
+          });
+          const pts = Object.keys(bw).map(Number).sort((a, x) => a - x).map((w) => ({ label: 'S' + w, value: bw[w] }));
+          if (pts.length) holder.appendChild(window.Charts.line(pts, { suffix: ' kg' }));
+          else holder.appendChild(el('p', { class: 'muted', text: 'Nessun peso registrato per questo esercizio.' }));
+        };
+        sel.addEventListener('change', draw);
+        chartsCard.appendChild(el('div', { class: 'section-title' }, [el('h4', { text: 'Progressione peso' })]));
+        chartsCard.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Seleziona esercizio' }), sel]));
+        chartsCard.appendChild(holder);
+        draw();
+      }
+      c.appendChild(chartsCard);
+
       // Selettore settimana
       const weekWrap = el('div', { class: 'card' }, [el('h3', { text: 'Compilazione per settimana' })]);
       const pills = el('div', { class: 'week-pills' });
@@ -1418,6 +1460,7 @@
                 ]),
                 el('span', { class: 'muted', text: (ex.suggested_weight ? 'peso sugg. ' + ex.suggested_weight : '') + (ex.rest ? ' · rec ' + ex.rest : ''), style: 'font-size:12px' }),
               ]),
+              ex.media_url ? el('div', { style: 'margin:2px 0 6px' }, window.UI.exerciseMedia(ex.media_url)) : null,
               ex.notes ? el('div', { class: 'muted', text: ex.notes, style: 'font-size:12.5px;margin-bottom:4px' }) : null,
               el('table', { class: 'table' }, [
                 el('thead', {}, el('tr', {}, ['', 'Ripetizioni', 'Intensità', 'Peso usato', 'Stato'].map((h) => el('th', { text: h })))),

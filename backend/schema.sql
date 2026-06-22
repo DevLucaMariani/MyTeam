@@ -115,6 +115,8 @@ CREATE TABLE IF NOT EXISTS exercise_catalog (
 ALTER TABLE exercise_catalog ADD COLUMN IF NOT EXISTS default_series INT;
 ALTER TABLE exercise_catalog ADD COLUMN IF NOT EXISTS default_reps LONGTEXT;
 ALTER TABLE exercise_catalog ADD COLUMN IF NOT EXISTS default_intensity LONGTEXT;
+-- Media dimostrativo dell'esercizio: link a immagine/GIF/YouTube (mostrato al cliente).
+ALTER TABLE exercise_catalog ADD COLUMN IF NOT EXISTS media_url VARCHAR(2048);
 
 -- Struttura settimanale "modello": giorni di allenamento del piano.
 CREATE TABLE IF NOT EXISTS plan_days (

@@ -273,7 +273,10 @@
 
         // Intestazione esercizio: nome + meta + nota (generale dell'esercizio)
         card.appendChild(el('div', { class: 'ex-head' }, [
-          el('div', { class: 'name', text: ex.name }),
+          el('div', { style: 'display:flex; align-items:center; gap:10px' }, [
+            el('div', { class: 'name', text: ex.name, style: 'flex:1' }),
+            window.UI.exerciseMedia(ex.media_url),
+          ]),
           ex.superset_group ? el('div', { class: 'meta', html: `🔗 <strong>Superset ${ex.superset_group}</strong> — esegui insieme agli esercizi con lo stesso codice` }) : null,
           (ex.suggested_weight || ex.rest)
             ? el('div', { class: 'meta', text: (ex.suggested_weight ? 'peso sugg. ' + ex.suggested_weight : '') + (ex.rest ? ' · rec ' + ex.rest : '') })
@@ -313,6 +316,7 @@
           ])),
           tbody,
         ]));
+        card.appendChild(el('button', { class: 'btn btn-sm rest-btn', html: '⏱ Recupero', onClick: () => startRest(parseRest(ex.rest)) }));
       });
       b.appendChild(card);
     });
@@ -384,10 +388,48 @@
   }
 
   // ---- Progressi e foto ---------------------------------------------------
+  // Grafici progressi: completamento per settimana + progressione peso per esercizio.
+  function progressCharts(b, updates, logs) {
+    const compPts = (updates || []).slice().sort((a, x) => a.week_number - x.week_number)
+      .map((u) => ({ label: 'S' + u.week_number, value: Number(u.percent_complete) || 0 }));
+    const compCard = el('div', { class: 'client-card' }, [el('h3', { text: 'Completamento per settimana' })]);
+    if (compPts.length) compCard.appendChild(window.Charts.line(compPts, { suffix: '%', max: 100 }));
+    else compCard.appendChild(el('p', { class: 'muted', text: 'Ancora nessun aggiornamento inviato.' }));
+    b.appendChild(compCard);
+
+    const exList = [];
+    (plan.days || []).forEach((d) => d.exercises.forEach((e) => { if (!exList.find((x) => x.id === e.id)) exList.push({ id: e.id, name: e.name }); }));
+    if (!exList.length) return;
+    const wCard = el('div', { class: 'client-card' }, [el('h3', { text: 'Progressione peso' })]);
+    const sel = el('select', {}, exList.map((e) => el('option', { value: e.id, text: e.name })));
+    const holder = el('div', {});
+    const draw = () => {
+      clear(holder);
+      const exId = Number(sel.value);
+      const byWeek = {};
+      (logs || []).filter((l) => Number(l.exercise_id) === exId).forEach((l) => {
+        const v = parseFloat(String(l.actual_weight || '').replace(',', '.'));
+        if (!Number.isNaN(v)) byWeek[l.week_number] = Math.max(byWeek[l.week_number] || 0, v);
+      });
+      const pts = Object.keys(byWeek).map(Number).sort((a, x) => a - x).map((w) => ({ label: 'S' + w, value: byWeek[w] }));
+      if (pts.length) holder.appendChild(window.Charts.line(pts, { suffix: ' kg' }));
+      else holder.appendChild(el('p', { class: 'muted', text: 'Nessun peso registrato per questo esercizio.' }));
+    };
+    sel.addEventListener('change', draw);
+    wCard.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Seleziona esercizio' }), sel]));
+    wCard.appendChild(holder);
+    draw();
+    b.appendChild(wCard);
+  }
+
   async function viewProgressi(b) {
     if (!plan) { b.appendChild(noPlan()); return; }
     const updates = await API.weeklyUpdates(plan.id);
     const photos = await API.getPhotos(plan.id);
+    let logs = [];
+    try { logs = await API.getLogs(plan.id); } catch (e) { logs = []; }
+
+    progressCharts(b, updates, logs);
 
     // Storico aggiornamenti
     const hist = el('div', { class: 'client-card' }, [el('h3', { text: 'Storico settimane' })]);
@@ -480,6 +522,53 @@
     };
     img.onerror = () => cb(src);
     img.src = src;
+  }
+
+  // ---- Timer di recupero (avviato a scelta dal cliente) -------------------
+  let restTimer = null;
+  function parseRest(rest) {
+    const s = String(rest || '');
+    let m = s.match(/(\d+)\s*'\s*(\d+)/); // 1'30
+    if (m) return (Number(m[1]) * 60) + Number(m[2]);
+    m = s.match(/(\d+)/);
+    return m ? Number(m[1]) : 90;
+  }
+  function stopRest() {
+    if (restTimer) { clearInterval(restTimer.id); restTimer.bar.remove(); restTimer = null; }
+  }
+  function beepVibe() {
+    try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) { /* ignora */ }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880; g.gain.setValueAtTime(0.15, ctx.currentTime);
+      o.start(); o.stop(ctx.currentTime + 0.4);
+      setTimeout(() => ctx.close(), 700);
+    } catch (e) { /* ignora */ }
+  }
+  function startRest(seconds) {
+    stopRest();
+    let remaining = Math.max(1, seconds || 90);
+    const label = el('span', { class: 'rest-time' });
+    const bar = el('div', { class: 'rest-bar' }, [
+      el('span', { text: '⏱' }), label,
+      el('button', { class: 'btn btn-sm', text: 'Stop', onClick: () => stopRest() }),
+    ]);
+    document.body.appendChild(bar);
+    const fmt = (t) => { const mm = Math.floor(t / 60); const ss = t % 60; return mm ? mm + ':' + String(ss).padStart(2, '0') : ss + 's'; };
+    label.textContent = fmt(remaining);
+    restTimer = {
+      bar,
+      id: setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) { label.textContent = '0s'; beepVibe(); stopRest(); return; }
+        label.textContent = fmt(remaining);
+      }, 1000),
+    };
   }
 
   window.Client = { mount, mountByToken };

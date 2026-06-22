@@ -181,5 +181,34 @@
     });
   }
 
-  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot };
+  // Media dimostrativo di un esercizio: immagine/GIF (anteprima cliccabile),
+  // video YouTube (player nel modal) o link generico. Ritorna null se vuoto.
+  function youtubeId(u) {
+    const m = String(u).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/);
+    return m ? m[1] : null;
+  }
+  function exerciseMedia(url) {
+    if (!url) return null;
+    const u = String(url).trim();
+    if (!u) return null;
+    if (/\.(gif|png|jpe?g|webp|avif)(\?.*)?$/i.test(u)) {
+      const img = el('img', { src: u, alt: '', class: 'ex-media-thumb', loading: 'lazy' });
+      img.addEventListener('click', () => {
+        const m = modal({ title: 'Dimostrazione', body: el('img', { src: u, alt: '', style: 'max-width:100%; border-radius:12px' }),
+          footer: [el('button', { class: 'btn btn-primary btn-block', text: 'Chiudi', onClick: () => m.close() })] });
+      });
+      return img;
+    }
+    const yt = youtubeId(u);
+    if (yt) {
+      return el('button', { class: 'btn btn-sm', html: '▶ Video', onClick: () => {
+        const m = modal({ title: 'Dimostrazione', wide: true,
+          body: el('div', { class: 'video-wrap', html: `<iframe src="https://www.youtube.com/embed/${yt}" allowfullscreen frameborder="0"></iframe>` }),
+          footer: [el('button', { class: 'btn btn-primary btn-block', text: 'Chiudi', onClick: () => m.close() })] });
+      } });
+    }
+    return el('a', { class: 'btn btn-sm', href: u, target: '_blank', html: '▶ Guarda dimostrazione' });
+  }
+
+  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot, exerciseMedia };
 })();
