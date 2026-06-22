@@ -1,13 +1,14 @@
 /* Service worker minimale: cache "app shell" per consultazione offline.
    I dati restano sul backend locale; qui memorizziamo solo i file statici.
    Strategia: NETWORK-FIRST (online -> sempre l'ultima versione; offline -> cache). */
-const CACHE = 'client-configurator-v3';
+const CACHE = 'client-configurator-v4';
 const SHELL = [
   './',
   './index.html',
   './css/styles.css',
   './js/api.js',
   './js/ui.js',
+  './js/i18n.js',
   './js/theme.js',
   './js/admin.js',
   './js/client.js',

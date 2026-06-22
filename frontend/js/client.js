@@ -137,7 +137,7 @@
           el('div', { class: 'hello', text: 'Ciao,' }),
           el('h2', { text: customer.first_name }),
         ]),
-        bell,
+        el('div', { style: 'display:flex; align-items:center; gap:8px' }, [window.I18N.toggleEl(), bell]),
       ]),
       plan
         ? el('div', { class: 'plan-name' }, `📋 ${plan.name} · ${plan.duration_weeks} settimane`
