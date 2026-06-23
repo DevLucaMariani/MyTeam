@@ -217,6 +217,64 @@ api.get('/exercise-catalog', wrap(async (_req, res) => {
   res.json(rows);
 }));
 
+// Normalizza un nome esercizio in "Title Case": prima lettera di ogni parola
+// maiuscola, il resto minuscolo (es. "hack squat"/"HACK SQUAT" -> "Hack Squat").
+// Gestisce spazi multipli, trattini, slash e parentesi come separatori di parola.
+function titleCaseName(raw) {
+  const s = String(raw == null ? '' : raw).trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  return s.toLowerCase().replace(/(^|[-\s/(])([a-zà-öø-ÿ])/g, (_m, sep, ch) => sep + ch.toUpperCase());
+}
+
+// Pulizia una-tantum (idempotente): porta tutti i nomi del catalogo a Title Case
+// e unisce gli eventuali duplicati (che differiscono solo per maiuscole/spazi).
+// Allinea anche i nomi degli esercizi nelle schede (display + join del media).
+// Eseguita all'avvio: dopo il primo passaggio i dati sono gia' normalizzati (no-op).
+async function normalizeCatalog(database) {
+  let renamed = 0;
+  let merged = 0;
+  const rows = await database.q('SELECT id, name FROM exercise_catalog ORDER BY id ASC');
+  const kept = new Map(); // chiave (norm minuscolo) -> true se gia' presente
+  for (const r of rows) {
+    const norm = titleCaseName(r.name);
+    if (!norm) continue;
+    const key = norm.toLowerCase();
+    if (kept.has(key)) {
+      await database.q('DELETE FROM exercise_catalog WHERE id=?', [r.id]);
+      merged += 1;
+      continue;
+    }
+    if (norm !== r.name) {
+      try {
+        await database.q('UPDATE exercise_catalog SET name=? WHERE id=?', [norm, r.id]);
+        renamed += 1;
+        kept.set(key, true);
+      } catch (err) {
+        if (err && err.code === 'ER_DUP_ENTRY') {
+          // Il nome normalizzato esiste gia' su un'altra riga: questa e' un duplicato.
+          await database.q('DELETE FROM exercise_catalog WHERE id=?', [r.id]);
+          merged += 1;
+        } else { throw err; }
+      }
+    } else {
+      kept.set(key, true);
+    }
+  }
+  // Allinea i nomi nelle schede gia' create.
+  let exFixed = 0;
+  const exNames = await database.q('SELECT DISTINCT name FROM plan_exercises');
+  for (const r of exNames) {
+    const norm = titleCaseName(r.name);
+    if (norm && norm !== r.name) {
+      await database.q('UPDATE plan_exercises SET name=? WHERE name=?', [norm, r.name]);
+      exFixed += 1;
+    }
+  }
+  if (renamed || merged || exFixed) {
+    console.log(`[catalog] normalizzazione nomi: ${renamed} corretti, ${merged} duplicati uniti, ${exFixed} esercizi nelle schede allineati`);
+  }
+}
+
 function catalogDefaults(body) {
   const series = body.default_series != null && body.default_series !== '' ? Number(body.default_series) : null;
   const arr = (v) => (Array.isArray(v) && v.length ? JSON.stringify(v.map(String)) : null);
@@ -224,7 +282,7 @@ function catalogDefaults(body) {
 }
 
 api.post('/exercise-catalog', wrap(async (req, res) => {
-  const name = (req.body.name || '').trim();
+  const name = titleCaseName(req.body.name);
   if (!name) return res.status(400).json({ error: 'Nome obbligatorio' });
   const { series, reps, intensity, media } = catalogDefaults(req.body);
   try {
@@ -238,7 +296,7 @@ api.post('/exercise-catalog', wrap(async (req, res) => {
 }));
 
 api.put('/exercise-catalog/:id', wrap(async (req, res) => {
-  const name = (req.body.name || '').trim();
+  const name = titleCaseName(req.body.name);
   if (!name) return res.status(400).json({ error: 'Nome obbligatorio' });
   const { series, reps, intensity, media } = catalogDefaults(req.body);
   try {
@@ -560,16 +618,16 @@ async function writeDaysAndNutrition(conn, planId, body) {
       const numSeries = Number(e.num_series) || 1;
       const scheme = parseReps(e.reps_scheme, numSeries);
       const intensity = parseReps(e.intensity_scheme, numSeries);
+      const exName = titleCaseName(e.name);
       await conn.query(
         `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme, superset_group)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        [dayId, j, e.name || 'Esercizio', numSeries,
+        [dayId, j, exName || 'Esercizio', numSeries,
           e.suggested_weight || null, e.rest || null, e.notes || null, JSON.stringify(scheme), JSON.stringify(intensity),
           (e.superset_group || '').trim() || null]
       );
       // Salva il nome nel catalogo se non gia' presente (anche se rinominato a mano),
       // con serie, ripetizioni e intensita' come default per i riutilizzi futuri.
-      const exName = (e.name || '').trim();
       if (exName) {
         await conn.query('INSERT IGNORE INTO exercise_catalog (name, default_series, default_reps, default_intensity) VALUES (?,?,?,?)',
           [exName, numSeries, JSON.stringify(scheme.default), JSON.stringify(intensity.default)]);
@@ -989,6 +1047,7 @@ app.get('*', (_req, res) => {
   try {
     await db.init();
     await seedCatalog(db); // catalogo esercizi sempre disponibile per l'autocomplete
+    await normalizeCatalog(db); // nomi a Title Case + rimozione duplicati (idempotente)
     if (String(process.env.SEED_DEMO).toLowerCase() === 'true') {
       await seedDemo(db);
     }
