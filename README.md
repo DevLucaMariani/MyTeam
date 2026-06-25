@@ -4,6 +4,8 @@ SPA per la gestione di clienti, schede di allenamento, piano nutrizionale e
 monitoraggio progressi. Due ruoli: **Amministratore** (pannello web) e
 **Cliente** (PWA installabile su smartphone).
 
+**App online (produzione, Railway):** https://myteam-production-4a8d.up.railway.app
+
 **Tutto gira in locale su questo PC.** Lo stack è composto da:
 
 - **MariaDB** (database) in un container Docker
