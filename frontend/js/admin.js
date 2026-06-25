@@ -1333,6 +1333,8 @@
     let editWeek = 1;
     // Giorno attualmente visualizzato nell'editor (indice in plan.days).
     let editDay = 0;
+    // Esercizio copiato (clipboard): incollabile in qualsiasi giorno della scheda.
+    let exClipboard = null;
 
     // Schemi per-serie/per-settimana presenti su ogni esercizio.
     const SCHEMES = ['reps_scheme', 'intensity_scheme'];
@@ -1585,6 +1587,7 @@
         el('div', { class: 'day-head' }, [
           el('input', { value: d.name, onInput: (e) => { d.name = e.target.value; }, onChange: () => redraw() }),
           el('button', { class: 'btn btn-sm', html: '+ Esercizio', onClick: () => { d.exercises.push(defaultExercise()); redraw(); } }),
+          exClipboard ? el('button', { class: 'btn btn-sm btn-accent', html: '⧉ Incolla esercizio', title: 'Incolla l\'esercizio copiato in questo giorno', onClick: () => { const c = JSON.parse(JSON.stringify(exClipboard)); ensureScheme(c); d.exercises.push(c); redraw(); } }) : null,
           el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina giorno', onClick: () => { plan.days.splice(di, 1); redraw(); } }),
         ]),
         el('div', { style: 'padding:12px' }, exWrap),
@@ -1593,7 +1596,7 @@
 
     function exerciseBlock(d, ex, ei) {
       ensureScheme(ex);
-      const nameInp = el('input', { value: ex.name || '', placeholder: 'Nome esercizio (scrivi o scegli dalla lista)', onInput: (e) => { ex.name = e.target.value; } });
+      const nameInp = el('input', { value: ex.name || '', placeholder: 'Nome esercizio (scrivi o scegli dalla lista)', style: 'width:100%', onInput: (e) => { ex.name = e.target.value; } });
       const pickBtn = el('button', { class: 'btn btn-sm', html: '📋 Scegli', title: 'Scegli dal catalogo', style: 'flex:0 0 auto',
         onClick: () => openExercisePicker((item) => {
           ex.name = item.name;
@@ -1608,8 +1611,13 @@
           ensureScheme(ex);
           redraw();
         }) });
-      const seriesInp = el('input', { type: 'number', min: 1, max: 12, value: ex.num_series, style: 'width:100%' });
-      seriesInp.addEventListener('change', (e) => setNumSeries(ex, e.target.value));
+      // N. serie: stepper con + e − (niente frecce del number input).
+      const seriesVal = el('span', { text: String(ex.num_series), style: 'min-width:28px; text-align:center; font-weight:700; font-size:15px' });
+      const seriesInp = el('div', { style: 'display:flex; align-items:center; gap:10px' }, [
+        el('button', { class: 'btn btn-sm', text: '−', style: 'min-width:40px; font-size:18px; line-height:1', onClick: () => setNumSeries(ex, (Number(ex.num_series) || 1) - 1) }),
+        seriesVal,
+        el('button', { class: 'btn btn-sm', text: '+', style: 'min-width:40px; font-size:18px; line-height:1', onClick: () => setNumSeries(ex, (Number(ex.num_series) || 1) + 1) }),
+      ]);
       const weightInp = el('input', { value: ex.suggested_weight || '', placeholder: 'es. 60 kg', onInput: (e) => { ex.suggested_weight = e.target.value; } });
       const restInp = el('input', { value: ex.rest || '', placeholder: "es. 90''", onInput: (e) => { ex.rest = e.target.value; } });
       const noteInp = el('input', { value: ex.notes || '', placeholder: "Nota valida per tutto l'esercizio", onInput: (e) => { ex.notes = e.target.value; } });
@@ -1646,27 +1654,29 @@
       }));
       ssSel.addEventListener('change', (e) => { ex.superset_group = e.target.value; redraw(); });
 
-      const uniChk = el('input', { type: 'checkbox' });
-      uniChk.checked = !!Number(ex.unilateral);
-      uniChk.addEventListener('change', (e) => { ex.unilateral = e.target.checked ? 1 : 0; redraw(); });
-      const uniRow = el('label', { style: 'display:flex; align-items:center; gap:8px; margin-top:10px; cursor:pointer; font-size:14px' }, [
-        uniChk, el('span', { text: '↔️ Esercizio monolaterale (esecuzione un lato alla volta)' }),
-      ]);
+      // Toggle Monolaterale (sostituisce il vecchio check sotto).
+      const uniBtn = el('button', {
+        class: 'btn btn-sm' + (Number(ex.unilateral) ? ' btn-primary' : ''),
+        html: (Number(ex.unilateral) ? '✓ ' : '') + '↔️ Monolaterale',
+        title: 'Esecuzione un lato alla volta — attiva/disattiva',
+        style: 'flex:0 0 auto',
+        onClick: () => { ex.unilateral = Number(ex.unilateral) ? 0 : 1; redraw(); },
+      });
+      const copyBtn = el('button', { class: 'btn btn-sm', html: '⧉ Copia', title: 'Copia questo esercizio',
+        onClick: () => { exClipboard = JSON.parse(JSON.stringify(ex)); toast('Esercizio copiato — usa "Incolla esercizio" nel giorno', 'ok'); redraw(); } });
+      const delBtn = el('button', { class: 'btn btn-sm btn-danger', text: '🗑 Elimina', title: 'Rimuovi esercizio',
+        onClick: () => { d.exercises.splice(ei, 1); redraw(); } });
 
       return el('div', { class: 'card', style: 'margin-bottom:12px; padding:14px' }, [
-        el('div', { class: 'ex-name-row' }, [
-          el('div', { style: 'flex:1' }, nameInp),
+        el('div', { style: 'display:flex; gap:8px; align-items:center; flex-wrap:wrap' }, [
+          el('div', { style: 'flex:1 1 240px; min-width:180px' }, nameInp),
           ex.superset_group ? el('span', { class: 'badge badge-attiva', text: '🔗 Superset ' + ex.superset_group, style: 'align-self:center' }) : null,
-          Number(ex.unilateral) ? el('span', { class: 'badge', text: '↔️ Mono', style: 'align-self:center' }) : null,
-          pickBtn,
-          el('button', { class: 'btn btn-sm btn-danger', html: '🗑', title: 'Rimuovi esercizio',
-            onClick: () => { d.exercises.splice(ei, 1); redraw(); } }),
+          uniBtn, pickBtn, copyBtn, delBtn,
         ]),
         el('div', { class: 'grid-3', style: 'margin-top:10px' }, [
           labeled('N. serie', seriesInp), labeled('Peso suggerito', weightInp), labeled('Recupero', restInp),
         ]),
         labeled('Superset (stesso codice = esercizi eseguiti insieme)', ssSel),
-        uniRow,
         labeled('Nota', noteInp),
         seriesTable,
       ]);
