@@ -8,6 +8,7 @@
   let plan = null;       // scheda attualmente in visione (default: l'attiva)
   let plans = [];        // elenco schede del cliente (attive + concluse)
   let trainer = null;    // trainer del cliente (mostrato nella Home)
+  let teamContacts = []; // rubrica del coach (nutrizionista, osteopata…)
   let curWeek = 1;
   let tab = 'home';
   let notifications = [];
@@ -15,7 +16,7 @@
   // Il cliente entra esclusivamente dal proprio link personale (?c=token).
   function mountByToken(container, token) {
     root = container;
-    customer = null; plan = null; plans = []; trainer = null; tab = 'home'; curWeek = 1; notifications = [];
+    customer = null; plan = null; plans = []; trainer = null; teamContacts = []; tab = 'home'; curWeek = 1; notifications = [];
     loadByToken(token);
   }
 
@@ -31,6 +32,7 @@
       const data = await API.getClientByToken(token);
       customer = data.customer;
       trainer = data.trainer || null;
+      teamContacts = data.contacts || [];
       // Applica il tema (white-label) del trainer all'app del cliente.
       window.Theme.apply(window.Theme.fromTrainer(trainer));
       await openHome();
@@ -148,14 +150,17 @@
     ]);
   }
 
+  // La sezione nutrizione è visibile solo se il coach l'ha attivata (default: no).
+  function nutritionOn() { return !!(trainer && Number(trainer.nutrition_enabled)); }
+
   function bottomNav() {
     const items = [
       { id: 'home', ico: '🏠', label: 'Home' },
       { id: 'scheda', ico: '🏋️', label: 'Scheda' },
-      { id: 'nutrizione', ico: '🥗', label: 'Nutrizione' },
+      nutritionOn() ? { id: 'nutrizione', ico: '🥗', label: 'Nutrizione' } : null,
       { id: 'progressi', ico: '📈', label: 'Progressi' },
-    ];
-    return el('nav', { class: 'bottom-nav' }, items.map((it) => el('button', {
+    ].filter(Boolean);
+    return el('nav', { class: 'bottom-nav', style: `grid-template-columns: repeat(${items.length}, 1fr)` }, items.map((it) => el('button', {
       class: tab === it.id ? 'active' : '', onClick: () => { tab = it.id; render(); },
     }, [el('span', { class: 'ico', text: it.ico }), el('span', { text: it.label })])));
   }
@@ -179,6 +184,7 @@
       b.appendChild(pushCard());
       const st = storicoCard(); if (st) b.appendChild(st);
       if (trainer) b.appendChild(trainerCard());
+      const cc = contactsCard(); if (cc) b.appendChild(cc);
       b.appendChild(window.UI.copyrightLine());
       return;
     }
@@ -201,10 +207,12 @@
       el('h3', { text: '🏋️ Allenamento di oggi' }),
       el('p', { class: 'muted', text: 'Apri la scheda, inserisci i pesi e spunta gli esercizi.' }),
     ]));
-    b.appendChild(el('div', { class: 'client-card', onClick: () => { tab = 'nutrizione'; render(); }, style: 'cursor:pointer' }, [
-      el('h3', { text: '🥗 Piano nutrizionale' }),
-      el('p', { class: 'muted', text: 'Calorie e macro per giorni di allenamento e riposo.' }),
-    ]));
+    if (nutritionOn()) {
+      b.appendChild(el('div', { class: 'client-card', onClick: () => { tab = 'nutrizione'; render(); }, style: 'cursor:pointer' }, [
+        el('h3', { text: '🥗 Piano nutrizionale' }),
+        el('p', { class: 'muted', text: 'Calorie e macro per giorni di allenamento e riposo.' }),
+      ]));
+    }
     b.appendChild(el('div', { class: 'client-card', onClick: () => { tab = 'progressi'; render(); }, style: 'cursor:pointer' }, [
       el('h3', { text: '📈 Progressi e foto' }),
       el('p', { class: 'muted', text: 'Invia l\'aggiornamento settimanale e carica le foto.' }),
@@ -255,6 +263,29 @@
     ]);
   }
 
+  // Card "Contatti utili": collaboratori che il coach ha collegato al team.
+  function contactsCard() {
+    if (!teamContacts.length) return null;
+    const card = el('div', { class: 'client-card' }, [
+      el('h3', { text: 'Contatti utili' }),
+      el('p', { class: 'muted', text: 'I professionisti collegati dal tuo coach.' }),
+    ]);
+    teamContacts.forEach((ct) => {
+      const digits = (ct.phone || '').replace(/\D/g, '');
+      const actions = el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap; margin-top:8px' });
+      if (ct.phone) actions.appendChild(el('a', { class: 'btn btn-sm btn-accent', href: `https://wa.me/${digits}`, target: '_blank', html: '🟢 WhatsApp' }));
+      if (ct.phone) actions.appendChild(el('a', { class: 'btn btn-sm', href: `tel:${ct.phone}`, html: '📞 Chiama' }));
+      if (ct.email) actions.appendChild(el('a', { class: 'btn btn-sm', href: `mailto:${ct.email}`, html: '✉️ Email' }));
+      card.appendChild(el('div', { style: 'padding:10px 0; border-top:1px solid var(--line)' }, [
+        el('div', { text: ct.name, style: 'font-weight:700' }),
+        ct.role ? el('div', { class: 'muted', text: ct.role, style: 'font-size:12.5px' }) : null,
+        ct.notes ? el('div', { class: 'muted', text: ct.notes, style: 'font-size:12px; margin-top:2px' }) : null,
+        actions,
+      ]));
+    });
+    return card;
+  }
+
   // Totale serie del piano (il completamento si misura sulle serie).
   function totalExercises() {
     return (plan.days || []).reduce((s, d) => s + d.exercises.reduce((a, e) => a + (Number(e.num_series) || 0), 0), 0);
@@ -278,18 +309,34 @@
 
     plan.days.forEach((d) => {
       const card = el('div', { class: 'client-card' }, [el('h3', { text: d.name })]);
+      // Raggruppa visivamente gli esercizi consecutivi con lo stesso codice superset
+      // in un unico riquadro; gli esercizi singoli vanno direttamente nella card.
+      let groupHost = null; let groupCode = null;
+      const hostFor = (ex) => {
+        const code = ex.superset_group || '';
+        if (!code) { groupHost = null; groupCode = null; return card; }
+        if (code !== groupCode) {
+          groupCode = code;
+          groupHost = el('div', { class: 'superset-block' }, [
+            el('div', { class: 'superset-label', html: `🔗 Superset ${code} — esegui gli esercizi in sequenza, recupero a fine giro` }),
+          ]);
+          card.appendChild(groupHost);
+        }
+        return groupHost;
+      };
       d.exercises.forEach((ex) => {
+        const host = hostFor(ex);
         const reps = window.UI.repsForWeek(ex.reps_scheme, curWeek);
         const inten = window.UI.repsForWeek(ex.intensity_scheme, curWeek);
         const hasIntensity = inten.some((v) => v != null && v !== '');
 
         // Intestazione esercizio: nome + meta + nota (generale dell'esercizio)
-        card.appendChild(el('div', { class: 'ex-head' }, [
+        host.appendChild(el('div', { class: 'ex-head' }, [
           el('div', { style: 'display:flex; align-items:center; gap:10px' }, [
             el('div', { class: 'name', text: ex.name, style: 'flex:1' }),
             window.UI.exerciseMedia(ex.media_url),
           ]),
-          ex.superset_group ? el('div', { class: 'meta', html: `🔗 <strong>Superset ${ex.superset_group}</strong> — esegui insieme agli esercizi con lo stesso codice` }) : null,
+          Number(ex.unilateral) ? el('div', { class: 'meta', html: '↔️ <strong>Monolaterale</strong> — esegui le serie su un lato, poi ripeti sull\'altro' }) : null,
           (ex.suggested_weight || ex.rest)
             ? el('div', { class: 'meta', text: (ex.suggested_weight ? 'peso sugg. ' + ex.suggested_weight : '') + (ex.rest ? ' · rec ' + ex.rest : '') })
             : null,
@@ -309,7 +356,11 @@
                 actualWeight: wInput.value, completed });
             } catch (err) { toast('Salvataggio non riuscito', 'err'); }
           };
-          wInput.addEventListener('change', () => save(check.classList.contains('on')));
+          // Inserire un peso equivale a dichiarare la serie svolta: spunta in automatico.
+          wInput.addEventListener('change', () => {
+            if (wInput.value.trim() && !check.classList.contains('on')) check.classList.add('on');
+            save(check.classList.contains('on'));
+          });
           check.addEventListener('click', () => { check.classList.toggle('on'); save(check.classList.contains('on')); });
 
           tbody.appendChild(el('tr', { class: 'serie-row' }, [
@@ -320,7 +371,7 @@
             el('td', { class: 'serie-c' }, check),
           ]));
         }
-        card.appendChild(el('table', { class: 'serie-table' }, [
+        host.appendChild(el('table', { class: 'serie-table' }, [
           el('thead', {}, el('tr', {}, [
             el('th', { text: 'Serie' }), el('th', { text: 'Rip.' }),
             hasIntensity ? el('th', { text: 'Int.' }) : null,
@@ -328,7 +379,7 @@
           ])),
           tbody,
         ]));
-        card.appendChild(el('button', { class: 'btn btn-sm rest-btn', html: '⏱ Recupero', onClick: () => startRest(parseRest(ex.rest)) }));
+        host.appendChild(el('button', { class: 'btn btn-sm rest-btn', html: '⏱ Recupero', onClick: () => startRest(parseRest(ex.rest)) }));
       });
       b.appendChild(card);
     });
@@ -360,6 +411,7 @@
 
   // ---- Nutrizione ---------------------------------------------------------
   function viewNutrizione(b) {
+    if (!nutritionOn()) { tab = 'home'; render(); return; }
     if (!plan) { b.appendChild(noPlan()); return; }
     const blocks = [
       { title: '🏋️ Giorno di allenamento', n: plan.nutrition.allenamento },

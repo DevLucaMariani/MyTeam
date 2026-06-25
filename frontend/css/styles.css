@@ -301,6 +301,13 @@ button { font-family: inherit; }
 .serie-c { width: 44px; }
 .serie-c .check { margin: 0 auto; }
 
+/* Riquadro superset: gli esercizi del gruppo condividono un bordo comune */
+.superset-block { border: 1.5px solid var(--indigo); border-radius: 12px;
+  padding: 4px 12px 10px; margin: 14px 0 6px; background: color-mix(in srgb, var(--indigo) 5%, transparent); }
+.superset-block .ex-head:first-child { margin-top: 8px; }
+.superset-label { font-size: 12px; font-weight: 800; color: var(--indigo);
+  text-transform: uppercase; letter-spacing: .3px; margin: 8px 0 2px; }
+
 .bottom-nav { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--line);
   display: grid; grid-template-columns: repeat(4, 1fr); }
 .bottom-nav button { border: none; background: none; padding: 10px 4px 12px; cursor: pointer;

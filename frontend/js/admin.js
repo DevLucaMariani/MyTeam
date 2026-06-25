@@ -53,8 +53,11 @@
       items.splice(1, 0, { view: 'trainers', ico: '🧑‍🏫', label: 'Coach' });
       items.push({ view: 'billing', ico: '💶', label: 'Compensi' });
     }
-    // Il trainer può invitare altri trainer (sponsorizzazione).
-    if (opts.role === 'trainer') items.push({ view: 'invite', ico: '➕', label: 'Invita coach' });
+    // Il trainer gestisce la propria rubrica e può invitare altri trainer.
+    if (opts.role === 'trainer') {
+      items.push({ view: 'contacts', ico: '📇', label: 'Contatti' });
+      items.push({ view: 'invite', ico: '➕', label: 'Invita coach' });
+    }
     items.push({ view: 'appearance', ico: '🎨', label: 'Aspetto' });
     return items;
   }
@@ -115,6 +118,7 @@
       appearance: renderAppearance,
       billing: renderBilling,
       invite: renderInvite,
+      contacts: renderContacts,
     };
     (views[state.view] || renderDashboard)(content);
     updateNotifBadge();
@@ -540,6 +544,71 @@
       window.Theme.apply(theme);
       toast('Aspetto salvato', 'ok');
     }
+  }
+
+  // ---- Contatti (rubrica del coach) ---------------------------------------
+  async function renderContacts(c) {
+    c.appendChild(topbar('Contatti', 'Collaboratori del tuo team — visibili ai tuoi clienti'));
+    loading(c);
+    try {
+      const contacts = await API.listMyContacts();
+      clear(c);
+      c.appendChild(topbar('Contatti', `${contacts.length} contatti — visibili ai tuoi clienti`, [
+        el('button', { class: 'btn btn-primary', html: '+ Nuovo contatto', onClick: () => openContactForm() }),
+      ]));
+      const card = el('div', { class: 'card' });
+      if (!contacts.length) {
+        card.appendChild(emptyState('Nessun contatto',
+          'Aggiungi i professionisti del tuo team (nutrizionista, osteopata, fisioterapista…): i tuoi clienti li vedranno nella loro app.'));
+      } else {
+        const rows = contacts.map((ct) => el('tr', {}, [
+          el('td', {}, [
+            el('div', { text: ct.name, style: 'font-weight:600' }),
+            ct.role ? el('div', { class: 'muted', text: ct.role, style: 'font-size:12px' }) : null,
+          ]),
+          el('td', { class: 'muted' }, [
+            ct.phone ? el('div', { text: '📞 ' + ct.phone }) : null,
+            ct.email ? el('div', { text: '✉️ ' + ct.email }) : null,
+          ]),
+          el('td', { style: 'text-align:right; white-space:nowrap' }, [
+            el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openContactForm(ct) }),
+            el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
+              confirmDialog(`Eliminare "${ct.name}" dalla rubrica?`, async () => {
+                try { await API.deleteMyContact(ct.id); toast('Contatto eliminato', 'ok'); navigate('contacts'); }
+                catch (err) { toast(err.message, 'err'); }
+              }, { danger: true, confirmLabel: 'Elimina' });
+            } }),
+          ]),
+        ]));
+        card.appendChild(el('table', { class: 'table' }, [el('tbody', {}, rows)]));
+      }
+      c.appendChild(card);
+    } catch (err) { showError(c, err); }
+  }
+
+  function openContactForm(existing) {
+    const nameF = field('Nome', 'name', (existing && existing.name) || '');
+    const roleF = field('Ruolo (es. Nutrizionista, Osteopata)', 'role', (existing && existing.role) || '');
+    const phoneF = field('Telefono / WhatsApp', 'phone', (existing && existing.phone) || '');
+    const emailF = field('Email', 'email', (existing && existing.email) || '');
+    const notesF = field('Nota (facoltativa)', 'notes', (existing && existing.notes) || '');
+    const val = (f) => f.querySelector('input').value.trim();
+    const m = modal({
+      title: existing ? 'Modifica contatto' : 'Nuovo contatto',
+      body: el('div', {}, [nameF, roleF, phoneF, emailF, notesF]),
+      footer: [
+        el('button', { class: 'btn', text: 'Annulla', onClick: () => m.close() }),
+        el('button', { class: 'btn btn-primary', text: 'Salva', onClick: async () => {
+          const data = { name: val(nameF), role: val(roleF), phone: val(phoneF), email: val(emailF), notes: val(notesF) };
+          if (!data.name) { toast('Il nome è obbligatorio', 'err'); return; }
+          try {
+            if (existing) await API.updateMyContact(existing.id, data);
+            else await API.createMyContact(data);
+            m.close(); toast('Contatto salvato', 'ok'); navigate('contacts');
+          } catch (err) { toast(err.message, 'err'); }
+        } }),
+      ],
+    });
   }
 
   // ---- Esercizi (catalogo) ------------------------------------------------
@@ -1000,7 +1069,7 @@
     const SCHEMES = ['reps_scheme', 'intensity_scheme'];
 
     function defaultExercise() {
-      return { name: '', num_series: 3, suggested_weight: '', rest: '', notes: '', superset_group: '',
+      return { name: '', num_series: 3, suggested_weight: '', rest: '', notes: '', superset_group: '', unilateral: 0,
         reps_scheme: { default: ['', '', ''], overrides: {} },
         intensity_scheme: { default: ['', '', ''], overrides: {} } };
     }
@@ -1198,13 +1267,48 @@
       if (plan.days.length) body.appendChild(dayBlock(plan.days[editDay], editDay));
       else body.appendChild(el('p', { class: 'muted', text: 'Nessun giorno. Aggiungine uno con "+ Giorno".' }));
 
-      // Nutrizione
+      // Nutrizione — sezione attivabile dal coach, spenta di default (in Italia
+      // la dieta è riservata a professionisti abilitati). L'admin la vede sempre.
       body.appendChild(el('hr', { class: 'hr' }));
       body.appendChild(el('div', { class: 'section-title' }, [el('h4', { text: 'Piano nutrizionale' })]));
-      body.appendChild(el('div', { class: 'nutri-grid' }, [
-        nutriBlock('Giorno di allenamento', 'allenamento'),
-        nutriBlock('Giorno di riposo', 'riposo'),
-      ]));
+      const nutritionOn = opts.role === 'admin' || (opts.trainer && Number(opts.trainer.nutrition_enabled));
+      if (nutritionOn) {
+        body.appendChild(el('div', { class: 'nutri-disclaimer', style: 'margin-bottom:12px' }, [
+          el('span', { class: 'ico', text: '⚠️' }),
+          el('div', {}, [
+            el('strong', { text: 'Solo valori indicativi' }),
+            el('p', { text: 'Calorie e macro sono indicazioni generali e orientative, non una prescrizione dietetica. La dieta personalizzata è riservata a medici, biologi nutrizionisti e dietisti: per quella indirizza il cliente a un professionista abilitato (vedi sezione Contatti).' }),
+          ]),
+        ]));
+        body.appendChild(el('div', { class: 'nutri-grid' }, [
+          nutriBlock('Giorno di allenamento', 'allenamento'),
+          nutriBlock('Giorno di riposo', 'riposo'),
+        ]));
+        if (opts.role === 'trainer') {
+          body.appendChild(el('button', { class: 'btn btn-sm', style: 'margin-top:8px', text: 'Disattiva sezione nutrizione', onClick: async () => {
+            try {
+              const t = await API.updateMySettings({ nutrition_enabled: 0 });
+              opts.trainer = Object.assign({}, opts.trainer, t);
+              toast('Sezione nutrizione disattivata', 'ok'); redraw();
+            } catch (err) { toast(err.message, 'err'); }
+          } }));
+        }
+      } else {
+        body.appendChild(el('div', { class: 'nutri-disclaimer', style: 'margin-bottom:12px' }, [
+          el('span', { class: 'ico', text: 'ℹ️' }),
+          el('div', {}, [
+            el('strong', { text: 'Sezione nutrizione disattivata' }),
+            el('p', { text: 'In Italia consigli alimentari e diete sono riservati a professionisti abilitati (medici, biologi nutrizionisti, dietisti). Consigliato: tienila spenta e collega un nutrizionista nella sezione Contatti. Puoi comunque attivarla sotto la tua responsabilità — vale per tutti i tuoi clienti.' }),
+            el('button', { class: 'btn btn-sm', style: 'margin-top:8px', text: 'Attiva comunque (a mia responsabilità)', onClick: async () => {
+              try {
+                const t = await API.updateMySettings({ nutrition_enabled: 1 });
+                opts.trainer = Object.assign({}, opts.trainer, t);
+                toast('Sezione nutrizione attivata', 'ok'); redraw();
+              } catch (err) { toast(err.message, 'err'); }
+            } }),
+          ]),
+        ]));
+      }
     }
 
     function dayBlock(d, di) {
@@ -1276,10 +1380,18 @@
       }));
       ssSel.addEventListener('change', (e) => { ex.superset_group = e.target.value; redraw(); });
 
+      const uniChk = el('input', { type: 'checkbox' });
+      uniChk.checked = !!Number(ex.unilateral);
+      uniChk.addEventListener('change', (e) => { ex.unilateral = e.target.checked ? 1 : 0; redraw(); });
+      const uniRow = el('label', { style: 'display:flex; align-items:center; gap:8px; margin-top:10px; cursor:pointer; font-size:14px' }, [
+        uniChk, el('span', { text: '↔️ Esercizio monolaterale (esecuzione un lato alla volta)' }),
+      ]);
+
       return el('div', { class: 'card', style: 'margin-bottom:12px; padding:14px' }, [
         el('div', { class: 'ex-name-row' }, [
           el('div', { style: 'flex:1' }, nameInp),
           ex.superset_group ? el('span', { class: 'badge badge-attiva', text: '🔗 Superset ' + ex.superset_group, style: 'align-self:center' }) : null,
+          Number(ex.unilateral) ? el('span', { class: 'badge', text: '↔️ Mono', style: 'align-self:center' }) : null,
           pickBtn,
           el('button', { class: 'btn btn-sm btn-danger', html: '🗑', title: 'Rimuovi esercizio',
             onClick: () => { d.exercises.splice(ei, 1); redraw(); } }),
@@ -1288,6 +1400,7 @@
           labeled('N. serie', seriesInp), labeled('Peso suggerito', weightInp), labeled('Recupero', restInp),
         ]),
         labeled('Superset (stesso codice = esercizi eseguiti insieme)', ssSel),
+        uniRow,
         labeled('Nota', noteInp),
         seriesTable,
       ]);

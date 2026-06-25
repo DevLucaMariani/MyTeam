@@ -60,6 +60,15 @@
     // Aspetto del trainer (logo + tema), applicato a console e clienti
     updateMyBranding: (data) => request('PUT', '/me/branding', data),
 
+    // Impostazioni del trainer (es. nutrizione on/off)
+    updateMySettings: (data) => request('PUT', '/me/settings', data),
+
+    // Rubrica del coach (collaboratori: nutrizionista, osteopata…)
+    listMyContacts: () => request('GET', '/me/contacts'),
+    createMyContact: (data) => request('POST', '/me/contacts', data),
+    updateMyContact: (id, data) => request('PUT', `/me/contacts/${id}`, data),
+    deleteMyContact: (id) => request('DELETE', `/me/contacts/${id}`),
+
     // Import scheda da PDF (bozza da verificare)
     importPdf: (pdfBase64) => request('POST', '/import/pdf', { pdf_base64: pdfBase64 }),
 

@@ -70,6 +70,10 @@ ALTER TABLE trainers ADD COLUMN IF NOT EXISTS suspended TINYINT(1) NOT NULL DEFA
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS clients_unlocked TINYINT(1) NOT NULL DEFAULT 0;
 -- Presenza online: ultimo accesso (aggiornato a ogni richiesta / heartbeat).
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP NULL DEFAULT NULL;
+-- Sezione nutrizione: DISATTIVATA di default. Il coach la abilita a propria
+-- discrezione/responsabilita' (in Italia la dieta e' riservata a professionisti
+-- abilitati). Se 0, la sezione e' nascosta sia al coach sia ai suoi clienti.
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS nutrition_enabled TINYINT(1) NOT NULL DEFAULT 0;
 
 -- Collega ogni cliente al proprio trainer e dagli un token personale per il
 -- link PWA (link permanente: si invia una volta, i contenuti si aggiornano).
@@ -149,6 +153,9 @@ ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS intensity_scheme LONGTEXT;
 -- Codice superset: esercizi con lo stesso codice (nello stesso giorno) si
 -- eseguono insieme come superset. Vuoto/NULL = esercizio singolo.
 ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS superset_group VARCHAR(8);
+-- Esercizio monolaterale (unilaterale): si esegue un lato alla volta.
+-- Il cliente vede l'indicazione "per lato".
+ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS unilateral TINYINT(1) NOT NULL DEFAULT 0;
 
 -- Piano nutrizionale: una riga per tipo di giorno (allenamento / riposo).
 CREATE TABLE IF NOT EXISTS nutrition (
@@ -230,6 +237,21 @@ CREATE TABLE IF NOT EXISTS progress_photos (
   taken_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Rubrica del coach: collaboratori/professionisti (nutrizionista, osteopata,
+-- fisioterapista...) che il coach collega al proprio team. Visibili ai suoi clienti.
+CREATE TABLE IF NOT EXISTS team_contacts (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  trainer_id  INT NOT NULL,
+  name        VARCHAR(120) NOT NULL,
+  role        VARCHAR(120),
+  phone       VARCHAR(40),
+  email       VARCHAR(160),
+  notes       VARCHAR(255),
+  position    INT NOT NULL DEFAULT 0,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Sottoscrizioni alle notifiche push (Web Push). audience: 'coach' | 'client'.

@@ -186,6 +186,7 @@ api.post('/auth/trainer', wrap(async (req, res) => {
     logo: t.logo, theme_accent: t.theme_accent, theme_mode: t.theme_mode,
     theme_bg: t.theme_bg, theme_surface: t.theme_surface,
     suspended: t.suspended, clients_unlocked: t.clients_unlocked,
+    nutrition_enabled: t.nutrition_enabled,
   });
 }));
 
@@ -193,7 +194,7 @@ api.post('/auth/trainer', wrap(async (req, res) => {
 api.get('/auth/trainer-by-token/:token', wrap(async (req, res) => {
   const [t] = await db.q(
     `SELECT id, first_name, last_name, console_token, logo,
-            theme_accent, theme_mode, theme_bg, theme_surface, suspended, clients_unlocked
+            theme_accent, theme_mode, theme_bg, theme_surface, suspended, clients_unlocked, nutrition_enabled
      FROM trainers WHERE console_token=? AND active=1`,
     [req.params.token]
   );
@@ -576,6 +577,7 @@ api.post('/plans/:id/duplicate', requireStaff, wrap(async (req, res) => {
       exercises: d.exercises.map((e) => ({
         name: e.name, num_series: e.num_series, reps_scheme: e.reps_scheme, intensity_scheme: e.intensity_scheme,
         suggested_weight: e.suggested_weight, rest: e.rest, notes: e.notes, superset_group: e.superset_group,
+        unilateral: e.unilateral,
       })),
     })),
     nutrition: src.nutrition,
@@ -620,11 +622,11 @@ async function writeDaysAndNutrition(conn, planId, body) {
       const intensity = parseReps(e.intensity_scheme, numSeries);
       const exName = titleCaseName(e.name);
       await conn.query(
-        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme, superset_group)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme, superset_group, unilateral)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [dayId, j, exName || 'Esercizio', numSeries,
           e.suggested_weight || null, e.rest || null, e.notes || null, JSON.stringify(scheme), JSON.stringify(intensity),
-          (e.superset_group || '').trim() || null]
+          (e.superset_group || '').trim() || null, e.unilateral ? 1 : 0]
       );
       // Salva il nome nel catalogo se non gia' presente (anche se rinominato a mano),
       // con serie, ripetizioni e intensita' come default per i riutilizzi futuri.
@@ -855,6 +857,7 @@ function trainerPublic(t) {
     theme_bg: t.theme_bg, theme_surface: t.theme_surface,
     sponsor_id: t.sponsor_id, invite_code: t.invite_code, commission_override: t.commission_override,
     suspended: t.suspended, clients_unlocked: t.clients_unlocked,
+    nutrition_enabled: t.nutrition_enabled,
   };
 }
 
@@ -1017,21 +1020,84 @@ api.put('/me/branding', requireStaff, wrap(async (req, res) => {
   res.json(trainerPublic(t));
 }));
 
+// Il trainer attiva/disattiva la sezione nutrizione (default: disattivata).
+// Vale per la sua console e per l'app di TUTTI i suoi clienti.
+api.put('/me/settings', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role !== 'trainer') return res.status(400).json({ error: 'Solo i trainer hanno impostazioni personali.' });
+  const enabled = req.body.nutrition_enabled ? 1 : 0;
+  await db.q('UPDATE trainers SET nutrition_enabled=? WHERE id=?', [enabled, req.ctx.trainerId]);
+  const [t] = await db.q('SELECT * FROM trainers WHERE id=?', [req.ctx.trainerId]);
+  res.json(trainerPublic(t));
+}));
+
+// ---- Rubrica del coach (collaboratori visibili ai clienti) ----------------
+function contactBody(b) {
+  return {
+    name: (b.name || '').trim(),
+    role: (b.role || '').trim() || null,
+    phone: (b.phone || '').trim() || null,
+    email: (b.email || '').trim() || null,
+    notes: (b.notes || '').trim() || null,
+  };
+}
+
+api.get('/me/contacts', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role !== 'trainer') return res.json([]);
+  res.json(await db.q('SELECT * FROM team_contacts WHERE trainer_id=? ORDER BY position, id', [req.ctx.trainerId]));
+}));
+
+api.post('/me/contacts', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role !== 'trainer') return res.status(400).json({ error: 'Solo i coach hanno una rubrica.' });
+  const c = contactBody(req.body);
+  if (!c.name) return res.status(400).json({ error: 'Il nome è obbligatorio.' });
+  const [{ n }] = await db.q('SELECT COALESCE(MAX(position),-1)+1 AS n FROM team_contacts WHERE trainer_id=?', [req.ctx.trainerId]);
+  const r = await db.q(
+    'INSERT INTO team_contacts (trainer_id, name, role, phone, email, notes, position) VALUES (?,?,?,?,?,?,?)',
+    [req.ctx.trainerId, c.name, c.role, c.phone, c.email, c.notes, n]
+  );
+  const [row] = await db.q('SELECT * FROM team_contacts WHERE id=?', [r.insertId]);
+  res.status(201).json(row);
+}));
+
+api.put('/me/contacts/:id', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role !== 'trainer') return res.status(400).json({ error: 'Solo i coach hanno una rubrica.' });
+  const c = contactBody(req.body);
+  if (!c.name) return res.status(400).json({ error: 'Il nome è obbligatorio.' });
+  const r = await db.q(
+    'UPDATE team_contacts SET name=?, role=?, phone=?, email=?, notes=? WHERE id=? AND trainer_id=?',
+    [c.name, c.role, c.phone, c.email, c.notes, req.params.id, req.ctx.trainerId]
+  );
+  if (!r.affectedRows) return res.status(404).json({ error: 'Contatto non trovato.' });
+  const [row] = await db.q('SELECT * FROM team_contacts WHERE id=?', [req.params.id]);
+  res.json(row);
+}));
+
+api.delete('/me/contacts/:id', requireStaff, wrap(async (req, res) => {
+  if (req.ctx.role !== 'trainer') return res.status(400).json({ error: 'Solo i coach hanno una rubrica.' });
+  await db.q('DELETE FROM team_contacts WHERE id=? AND trainer_id=?', [req.params.id, req.ctx.trainerId]);
+  res.status(204).end();
+}));
+
 // ---- Accesso cliente via token (link PWA personale) ----------------------
 api.get('/client/:token', wrap(async (req, res) => {
   const [c] = await db.q('SELECT * FROM customers WHERE access_token=?', [req.params.token]);
   if (!c) return res.status(404).json({ error: 'Link non valido o scaduto.' });
   let trainer = null;
+  let contacts = [];
   if (c.trainer_id) {
     const [t] = await db.q(
       `SELECT first_name, last_name, email, phone, bio, photo, logo,
-              theme_accent, theme_mode, theme_bg, theme_surface
+              theme_accent, theme_mode, theme_bg, theme_surface, nutrition_enabled
        FROM trainers WHERE id=?`,
       [c.trainer_id]
     );
     trainer = t || null;
+    contacts = await db.q(
+      'SELECT id, name, role, phone, email, notes FROM team_contacts WHERE trainer_id=? ORDER BY position, id',
+      [c.trainer_id]
+    );
   }
-  res.json({ customer: c, trainer });
+  res.json({ customer: c, trainer, contacts });
 }));
 
 app.use('/api', api);
