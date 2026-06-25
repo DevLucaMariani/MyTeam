@@ -855,6 +855,7 @@ function trainerPublic(t) {
     console_token: t.console_token, // serve all'admin per generare il link di accesso
     logo: t.logo, theme_accent: t.theme_accent, theme_mode: t.theme_mode,
     theme_bg: t.theme_bg, theme_surface: t.theme_surface,
+    brand_name: t.brand_name, welcome_message: t.welcome_message,
     sponsor_id: t.sponsor_id, invite_code: t.invite_code, commission_override: t.commission_override,
     suspended: t.suspended, clients_unlocked: t.clients_unlocked,
     nutrition_enabled: t.nutrition_enabled,
@@ -1009,11 +1010,12 @@ api.get('/me', requireStaff, wrap(async (req, res) => {
 // Il trainer aggiorna il proprio aspetto (logo + tema della console e dei clienti).
 api.put('/me/branding', requireStaff, wrap(async (req, res) => {
   if (req.ctx.role !== 'trainer') return res.status(400).json({ error: 'Solo i trainer hanno un aspetto personalizzato.' });
-  const data = pick(req.body, ['logo', 'theme_accent', 'theme_mode', 'theme_bg', 'theme_surface']);
+  const data = pick(req.body, ['logo', 'theme_accent', 'theme_mode', 'theme_bg', 'theme_surface', 'brand_name', 'welcome_message']);
   data.id = req.ctx.trainerId;
   await db.q(
     `UPDATE trainers SET logo=:logo, theme_accent=:theme_accent, theme_mode=:theme_mode,
-            theme_bg=:theme_bg, theme_surface=:theme_surface WHERE id=:id`,
+            theme_bg=:theme_bg, theme_surface=:theme_surface,
+            brand_name=:brand_name, welcome_message=:welcome_message WHERE id=:id`,
     data
   );
   const [t] = await db.q('SELECT * FROM trainers WHERE id=?', [req.ctx.trainerId]);
@@ -1087,7 +1089,8 @@ api.get('/client/:token', wrap(async (req, res) => {
   if (c.trainer_id) {
     const [t] = await db.q(
       `SELECT first_name, last_name, email, phone, bio, photo, logo,
-              theme_accent, theme_mode, theme_bg, theme_surface, nutrition_enabled
+              theme_accent, theme_mode, theme_bg, theme_surface, nutrition_enabled,
+              brand_name, welcome_message
        FROM trainers WHERE id=?`,
       [c.trainer_id]
     );
@@ -1098,6 +1101,14 @@ api.get('/client/:token', wrap(async (req, res) => {
     );
   }
   res.json({ customer: c, trainer, contacts });
+}));
+
+// Il cliente accetta l'informativa privacy (consenso GDPR, registrato una volta).
+api.post('/client/privacy-accept', requireClientOrStaff, wrap(async (req, res) => {
+  if (req.ctx.role !== 'client') return res.status(400).json({ error: 'Solo il cliente registra il proprio consenso.' });
+  await db.q('UPDATE customers SET privacy_accepted_at=NOW() WHERE id=? AND privacy_accepted_at IS NULL', [req.ctx.customerId]);
+  const [c] = await db.q('SELECT privacy_accepted_at FROM customers WHERE id=?', [req.ctx.customerId]);
+  res.json({ privacy_accepted_at: c ? c.privacy_accepted_at : null });
 }));
 
 app.use('/api', api);

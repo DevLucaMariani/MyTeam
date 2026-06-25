@@ -35,6 +35,8 @@
       teamContacts = data.contacts || [];
       // Applica il tema (white-label) del trainer all'app del cliente.
       window.Theme.apply(window.Theme.fromTrainer(trainer));
+      // Consenso privacy (GDPR): obbligatorio prima di usare l'app.
+      if (!customer.privacy_accepted_at) { showConsentGate(); return; }
       await openHome();
     } catch (err) {
       clear(root);
@@ -43,6 +45,40 @@
         el('p', { class: 'muted', text: 'Questo link non è più valido. Chiedi al tuo coach di inviartene uno nuovo.' }),
       ])));
     }
+  }
+
+  function coachName() { return trainer ? `${trainer.first_name} ${trainer.last_name}` : ''; }
+
+  // Gate di consenso privacy: mostrato finché il cliente non accetta l'informativa.
+  function showConsentGate() {
+    clear(root);
+    const accept = el('input', { type: 'checkbox' });
+    const btn = el('button', { class: 'btn btn-primary btn-block', text: 'Accetto e continuo', disabled: true, style: 'margin-top:14px' });
+    accept.addEventListener('change', () => { btn.disabled = !accept.checked; });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = 'Attendi…';
+      try {
+        await API.acceptPrivacy();
+        customer.privacy_accepted_at = new Date().toISOString();
+        await openHome();
+      } catch (err) {
+        toast('Operazione non riuscita, riprova', 'err');
+        btn.disabled = false; btn.textContent = 'Accetto e continuo';
+      }
+    });
+    const brand = (trainer && trainer.brand_name) ? trainer.brand_name : 'MyTeam';
+    root.appendChild(el('div', { class: 'client' }, el('div', { class: 'client-body' }, [
+      el('h2', { text: 'Benvenuto in ' + brand }),
+      el('p', { class: 'muted', text: 'Prima di iniziare, leggi come trattiamo i tuoi dati. Per usare l’app è necessario il tuo consenso.' }),
+      el('div', { class: 'client-card' }, [
+        window.UI.privacyContent({ coachName: coachName(), coachEmail: trainer && trainer.email }),
+      ]),
+      el('label', { style: 'display:flex; align-items:flex-start; gap:8px; margin-top:8px; font-size:14px' }, [
+        accept,
+        el('span', { text: 'Ho letto l’informativa e acconsento al trattamento dei miei dati, inclusi i dati sulla salute (peso, foto di monitoraggio).' }),
+      ]),
+      btn,
+    ])));
   }
 
   // Accesso senza link (dalla scelta ruolo): spiega come entrare.
@@ -136,6 +172,7 @@
     ]);
     return el('div', { class: 'client-header' }, [
       (trainer && trainer.logo) ? el('img', { src: trainer.logo, alt: '', style: 'max-height:40px; max-width:150px; object-fit:contain; margin-bottom:10px' }) : null,
+      (trainer && trainer.brand_name) ? el('div', { text: trainer.brand_name, style: 'font-weight:800; font-size:15px; margin-bottom:6px' }) : null,
       el('div', { class: 'client-header-top' }, [
         el('div', {}, [
           el('div', { class: 'hello', text: 'Ciao,' }),
@@ -143,6 +180,7 @@
         ]),
         el('div', { style: 'display:flex; align-items:center; gap:8px' }, [window.I18N.toggleEl(), bell]),
       ]),
+      (trainer && trainer.welcome_message) ? el('div', { class: 'muted', text: trainer.welcome_message, style: 'font-size:13px; margin-top:4px' }) : null,
       plan
         ? el('div', { class: 'plan-name' }, `📋 ${plan.name} · ${plan.duration_weeks} settimane`
             + ((plan.start_date || plan.end_date) ? `\n📅 ${window.UI.fmtDate(plan.start_date)} → ${window.UI.fmtDate(plan.end_date)}` : ''))

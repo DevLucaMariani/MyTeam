@@ -63,6 +63,9 @@
     // Impostazioni del trainer (es. nutrizione on/off)
     updateMySettings: (data) => request('PUT', '/me/settings', data),
 
+    // Consenso privacy del cliente (GDPR)
+    acceptPrivacy: () => request('POST', '/client/privacy-accept'),
+
     // Rubrica del coach (collaboratori: nutrizionista, osteopata…)
     listMyContacts: () => request('GET', '/me/contacts'),
     createMyContact: (data) => request('POST', '/me/contacts', data),

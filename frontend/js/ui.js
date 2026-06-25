@@ -150,12 +150,59 @@
     });
   }
 
-  // Riga di copyright cliccabile (apre i Credits).
+  // Riga di copyright cliccabile (apre i Credits) + link all'informativa privacy.
   function copyrightLine(extraClass) {
     const a = el('a', { href: '#', text: 'Credits', onClick: (e) => { e.preventDefault(); showCredits(); } });
     return el('p', { class: 'copyright' + (extraClass ? ' ' + extraClass : '') }, [
       document.createTextNode(`© ${year()} Luca Mariani — Tutti i diritti riservati · `), a,
+      document.createTextNode(' · '), privacyLink(),
     ]);
+  }
+
+  // ---- Informativa privacy (GDPR) -----------------------------------------
+  // coachName/coachEmail personalizzano il "titolare" quando disponibili.
+  function privacyContent(opts) {
+    const o = opts || {};
+    const titolare = o.coachName
+      ? `il tuo coach <strong>${o.coachName}</strong>` + (o.coachEmail ? ` (${o.coachEmail})` : '')
+      : 'il coach/centro che ti ha invitato';
+    const p = (html) => el('p', { html, class: 'muted', style: 'margin:0 0 6px; font-size:13px; line-height:1.5' });
+    const sec = (title, nodes) => el('div', { style: 'margin:12px 0' }, [
+      el('h4', { text: title, style: 'margin:0 0 4px; font-size:14px' }),
+      ...(Array.isArray(nodes) ? nodes : [nodes]),
+    ]);
+    return el('div', {}, [
+      p('Questa informativa spiega come vengono trattati i tuoi dati, ai sensi del Regolamento UE 2016/679 (GDPR).'),
+      sec('1. Titolare del trattamento', p(`Titolare del trattamento è ${titolare}. La piattaforma MyTeam tratta i dati per suo conto (responsabile del trattamento), esclusivamente per erogare il servizio.`)),
+      sec('2. Dati trattati', [
+        p('• <strong>Anagrafici e di contatto</strong>: nome, cognome, email, telefono, data di nascita, sesso.'),
+        p('• <strong>Relativi all’allenamento</strong>: schede, pesi sollevati, completamento esercizi, note.'),
+        p('• <strong>Categorie particolari (dati sulla salute, art. 9 GDPR)</strong>: peso e parametri corporei, foto di monitoraggio caricate volontariamente, eventuali obiettivi di salute.'),
+      ]),
+      sec('3. Finalità', p('Creare e gestire il tuo programma di allenamento, monitorare i progressi e permettere al coach di seguirti.')),
+      sec('4. Base giuridica', p('Il trattamento si basa sul tuo <strong>consenso</strong> (art. 6.1.a e, per i dati sulla salute, art. 9.2.a GDPR) e sull’esecuzione del servizio richiesto (art. 6.1.b). Puoi revocare il consenso in qualsiasi momento.')),
+      sec('5. Conservazione', p('I dati sono conservati per la durata del rapporto con il coach e rimossi su tua richiesta o quando non più necessari.')),
+      sec('6. Destinatari', p('I dati sono visibili al tuo coach e agli eventuali professionisti che lui collega al team. Non vengono venduti né ceduti a terzi per finalità di marketing.')),
+      sec('7. Cookie e archiviazione tecnica', p('L’app non usa cookie di profilazione né strumenti di tracciamento di terze parti. Usa solo l’archiviazione locale del dispositivo (localStorage) per tenerti collegato e ricordare le preferenze: è tecnicamente necessaria e non richiede consenso.')),
+      sec('8. Notifiche push', p('Le notifiche sono facoltative (opt-in) e attive solo se le abiliti tu dall’app.')),
+      sec('9. I tuoi diritti', p('Puoi accedere ai tuoi dati, rettificarli, cancellarli, limitarne il trattamento, opporti e richiederne la portabilità (artt. 15-22 GDPR).')),
+      sec('10. Come esercitarli', p(o.coachEmail ? `Scrivi al tuo coach all’indirizzo ${o.coachEmail}.` : 'Contatta il tuo coach, titolare del trattamento, per esercitare i diritti o revocare il consenso.')),
+    ]);
+  }
+
+  function showPrivacy(opts) {
+    const m = modal({
+      title: 'Informativa Privacy',
+      wide: true,
+      body: privacyContent(opts),
+      footer: [el('button', { class: 'btn btn-primary btn-block', text: 'Chiudi', onClick: () => m.close() })],
+    });
+    return m;
+  }
+
+  // Link testuale "Privacy" che apre l'informativa.
+  function privacyLink(opts) {
+    return el('a', { href: '#', text: 'Privacy', onClick: (e) => { e.preventDefault(); showPrivacy(opts); } });
   }
 
   // Presenza online (secondi dall'ultimo accesso, calcolati dal server).
@@ -203,7 +250,7 @@
     if (yt) {
       return el('button', { class: 'btn btn-sm', html: '▶ Video', onClick: () => {
         const m = modal({ title: 'Dimostrazione', wide: true,
-          body: el('div', { class: 'video-wrap', html: `<iframe src="https://www.youtube.com/embed/${yt}" allowfullscreen frameborder="0"></iframe>` }),
+          body: el('div', { class: 'video-wrap', html: `<iframe src="https://www.youtube-nocookie.com/embed/${yt}" allowfullscreen frameborder="0"></iframe>` }),
           footer: [el('button', { class: 'btn btn-primary btn-block', text: 'Chiudi', onClick: () => m.close() })] });
       } });
     }
@@ -245,5 +292,5 @@
     return b;
   }
 
-  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot, exerciseMedia, pushButton };
+  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, privacyContent, showPrivacy, privacyLink, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot, exerciseMedia, pushButton };
 })();

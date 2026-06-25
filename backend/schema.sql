@@ -74,6 +74,10 @@ ALTER TABLE trainers ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP NULL DEFAULT N
 -- discrezione/responsabilita' (in Italia la dieta e' riservata a professionisti
 -- abilitati). Se 0, la sezione e' nascosta sia al coach sia ai suoi clienti.
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS nutrition_enabled TINYINT(1) NOT NULL DEFAULT 0;
+-- White-label esteso: nome dello studio/brand e messaggio di benvenuto mostrati
+-- ai clienti del coach (oltre a logo e tema gia' presenti).
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS brand_name VARCHAR(80);
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS welcome_message VARCHAR(200);
 
 -- Collega ogni cliente al proprio trainer e dagli un token personale per il
 -- link PWA (link permanente: si invia una volta, i contenuti si aggiornano).
@@ -81,6 +85,9 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS trainer_id INT;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS access_token VARCHAR(64);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP NULL DEFAULT NULL;
 ALTER TABLE customers ADD UNIQUE INDEX uq_customer_token (access_token);
+-- Consenso privacy (GDPR): data/ora in cui il cliente ha accettato l'informativa
+-- sul trattamento dei dati (inclusi dati particolari: peso, foto di monitoraggio).
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMP NULL DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS plans (
   id             INT AUTO_INCREMENT PRIMARY KEY,

@@ -83,7 +83,7 @@
   function render() {
     clear(root);
     const brandText = (opts.role === 'trainer' && opts.trainer)
-      ? `${opts.trainer.first_name} ${opts.trainer.last_name}`
+      ? (opts.trainer.brand_name || `${opts.trainer.first_name} ${opts.trainer.last_name}`)
       : 'MyTeam';
     const brandLogo = (opts.role === 'trainer' && opts.trainer && opts.trainer.logo)
       ? opts.trainer.logo : 'assets/logo.png';
@@ -443,6 +443,8 @@
       bg: (isTrainer ? t.theme_bg : t.bg) || '',
       surface: (isTrainer ? t.theme_surface : t.surface) || '',
       logo: isTrainer ? (t.logo || null) : null,
+      brand_name: isTrainer ? (t.brand_name || '') : '',
+      welcome_message: isTrainer ? (t.welcome_message || '') : '',
     };
     const live = () => window.Theme.apply(cur);
 
@@ -509,6 +511,19 @@
         el('div', { style: 'display:flex; align-items:center; gap:8px; flex-wrap:wrap' }, [fileInput, rm]),
         logoPreview,
       ]));
+
+      // Nome studio/brand + messaggio di benvenuto mostrati ai clienti.
+      const brandInput = el('input', { value: cur.brand_name, placeholder: 'es. Studio Rossi Personal Training', maxlength: 80 });
+      brandInput.addEventListener('input', (e) => { cur.brand_name = e.target.value; });
+      card.appendChild(el('div', { class: 'field' }, [
+        el('label', { text: 'Nome studio / brand (mostrato ai clienti)' }), brandInput,
+      ]));
+      const welcomeInput = el('textarea', { rows: 2, maxlength: 200, placeholder: 'es. Benvenuto nel team! Insieme raggiungiamo i tuoi obiettivi.' });
+      welcomeInput.value = cur.welcome_message;
+      welcomeInput.addEventListener('input', (e) => { cur.welcome_message = e.target.value; });
+      card.appendChild(el('div', { class: 'field' }, [
+        el('label', { text: 'Messaggio di benvenuto (mostrato ai clienti)' }), welcomeInput,
+      ]));
     }
 
     // Azioni
@@ -532,6 +547,8 @@
         const t = await API.updateMyBranding({
           logo: cur.logo || null, theme_accent: cur.accent || null, theme_mode: cur.mode || null,
           theme_bg: cur.bg || null, theme_surface: cur.surface || null,
+          brand_name: (cur.brand_name || '').trim() || null,
+          welcome_message: (cur.welcome_message || '').trim() || null,
         });
         opts.trainer = Object.assign({}, opts.trainer, t);
         window.Theme.apply(window.Theme.fromTrainer(opts.trainer));
