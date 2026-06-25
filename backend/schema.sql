@@ -78,6 +78,9 @@ ALTER TABLE trainers ADD COLUMN IF NOT EXISTS nutrition_enabled TINYINT(1) NOT N
 -- ai clienti del coach (oltre a logo e tema gia' presenti).
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS brand_name VARCHAR(80);
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS welcome_message VARCHAR(200);
+-- Moduli/servizi extra attivati dall'amministratore per il coach (mappa JSON,
+-- es. {"advanced_appearance": true}). Vedi parseModules/trainerPublic in server.js.
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS modules LONGTEXT;
 
 -- Collega ogni cliente al proprio trainer e dagli un token personale per il
 -- link PWA (link permanente: si invia una volta, i contenuti si aggiornano).

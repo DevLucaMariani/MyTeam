@@ -69,6 +69,9 @@
     exportMyData: () => request('GET', '/client-export'),
     requestDeletion: () => request('POST', '/client/request-deletion'),
 
+    // Moduli extra del coach (attivati dall'amministratore)
+    setTrainerModule: (id, key, enabled) => request('PUT', `/trainers/${id}/modules`, { key, enabled }),
+
     // Pagamenti del cliente (registro spese gestito dal coach)
     listPayments: (customerId) => request('GET', `/customers/${customerId}/payments`),
     createPayment: (customerId, data) => request('POST', `/customers/${customerId}/payments`, data),

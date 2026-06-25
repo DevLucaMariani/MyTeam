@@ -59,7 +59,8 @@
       items.push({ view: 'invite', ico: '➕', label: 'Invita coach' });
       items.push({ view: 'settings', ico: '⚙️', label: 'Impostazioni' });
     }
-    items.push({ view: 'appearance', ico: '🎨', label: 'Aspetto' });
+    // L'aspetto del coach è dentro Impostazioni; l'admin ha la sua pagina dedicata.
+    if (opts.role === 'admin') items.push({ view: 'appearance', ico: '🎨', label: 'Aspetto' });
     return items;
   }
 
@@ -101,7 +102,6 @@
         }, [el('span', { class: 'ico', text: '↩' }), el('span', { text: 'Esci' })]),
       el('button', { class: 'nav-item', style: 'opacity:.65; font-size:12px', onClick: () => window.UI.showCredits(),
         }, [el('span', { class: 'ico', text: 'ⓘ' }), el('span', { text: 'Credits' })]),
-      opts.role === 'trainer' ? el('div', { style: 'padding:8px 14px' }, window.UI.pushButton()) : null,
       el('div', { style: 'padding:8px 14px' }, window.I18N.toggleEl()),
     ]);
 
@@ -237,6 +237,7 @@
                   catch (err) { toast(err.message, 'err'); }
                 }, { danger: sus, confirmLabel: sus ? 'Sospendi' : 'Riattiva' });
               } }),
+              el('button', { class: 'btn btn-sm', text: '🧩 Moduli', onClick: () => openTrainerModules(t) }),
               el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openTrainerForm(t) }),
               el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
                 confirmDialog(`Eliminare il coach ${t.first_name} ${t.last_name}? I suoi clienti restano, ma senza coach assegnato.`, async () => {
@@ -271,6 +272,41 @@
       }
       c.appendChild(card);
     } catch (err) { showError(c, err); }
+  }
+
+  // Catalogo dei moduli extra attivabili dall'admin per un coach.
+  const TRAINER_MODULES = [
+    { key: 'advanced_appearance', label: 'Aspetto avanzato', desc: 'Personalizzazione completa di sfondo e superfici: interfaccia su misura per il coach e i suoi clienti.' },
+  ];
+
+  function openTrainerModules(t) {
+    const body = el('div', {}, [
+      el('p', { class: 'muted', style: 'font-size:13px', text: 'Attiva i servizi extra per questo coach. Le modifiche valgono dal suo prossimo accesso.' }),
+    ]);
+    TRAINER_MODULES.forEach((mod) => {
+      const mods = (t.modules && typeof t.modules === 'object') ? t.modules : {};
+      const toggle = el('input', { type: 'checkbox' });
+      toggle.checked = !!mods[mod.key];
+      toggle.addEventListener('change', async () => {
+        try {
+          const updated = await API.setTrainerModule(t.id, mod.key, toggle.checked);
+          t.modules = updated.modules || {};
+          toast(toggle.checked ? 'Modulo attivato' : 'Modulo disattivato', 'ok');
+        } catch (err) { toast(err.message, 'err'); toggle.checked = !toggle.checked; }
+      });
+      body.appendChild(el('label', { style: 'display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-top:1px solid var(--line); cursor:pointer' }, [
+        toggle,
+        el('div', {}, [
+          el('div', { text: mod.label, style: 'font-weight:600' }),
+          el('div', { class: 'muted', text: mod.desc, style: 'font-size:12.5px' }),
+        ]),
+      ]));
+    });
+    const m = modal({
+      title: `Moduli extra — ${t.first_name} ${t.last_name}`,
+      body,
+      footer: [el('button', { class: 'btn btn-primary btn-block', text: 'Chiudi', onClick: () => m.close() })],
+    });
   }
 
   function openTrainerForm(existing) {
@@ -435,9 +471,13 @@
     } catch (err) { showError(c, err); }
   }
 
-  // ---- Aspetto (tema + logo) ----------------------------------------------
-  function renderAppearance(c) {
+  // ---- Aspetto: card riutilizzabile (admin: pagina dedicata; coach: in Impostazioni) ----
+  // I controlli avanzati (sfondo + superficie = "aspetto avanzato/aggressivo")
+  // sono sempre attivi per l'admin; per il coach solo se l'amministratore ha
+  // attivato il modulo "advanced_appearance".
+  function appearanceCard() {
     const isTrainer = opts.role === 'trainer';
+    const advancedOn = !isTrainer || !!(opts.trainer && opts.trainer.modules && opts.trainer.modules.advanced_appearance);
     const t = isTrainer ? (opts.trainer || {}) : window.Theme.loadAdmin();
     const cur = {
       accent: (isTrainer ? t.theme_accent : t.accent) || '',
@@ -449,10 +489,6 @@
       welcome_message: isTrainer ? (t.welcome_message || '') : '',
     };
     const live = () => window.Theme.apply(cur);
-
-    c.appendChild(topbar('Aspetto', isTrainer
-      ? 'Logo e colori: valgono per la tua console E per l\'app dei tuoi clienti'
-      : 'Colori della tua console (solo per te)'));
 
     const card = el('div', { class: 'card' });
 
@@ -485,15 +521,27 @@
     refreshSwatches();
     card.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Colore principale (accento)' }), swatches]));
 
-    // Sfondo + superficie (facoltativi)
-    const bgInput = el('input', { type: 'color', value: cur.bg || '#f1f5f9', style: 'width:48px;height:34px;padding:2px;border-radius:8px' });
-    bgInput.addEventListener('input', (e) => { cur.bg = e.target.value; live(); });
-    const surfInput = el('input', { type: 'color', value: cur.surface || '#ffffff', style: 'width:48px;height:34px;padding:2px;border-radius:8px' });
-    surfInput.addEventListener('input', (e) => { cur.surface = e.target.value; live(); });
-    card.appendChild(el('div', { class: 'grid-2' }, [
-      el('div', { class: 'field' }, [el('label', { text: 'Sfondo (facoltativo)' }), bgInput]),
-      el('div', { class: 'field' }, [el('label', { text: 'Card / superficie (facoltativo)' }), surfInput]),
-    ]));
+    // Sfondo + superficie ("aspetto avanzato") — modulo extra per il coach.
+    let bgInput = null;
+    let surfInput = null;
+    if (advancedOn) {
+      bgInput = el('input', { type: 'color', value: cur.bg || '#f1f5f9', style: 'width:48px;height:34px;padding:2px;border-radius:8px' });
+      bgInput.addEventListener('input', (e) => { cur.bg = e.target.value; live(); });
+      surfInput = el('input', { type: 'color', value: cur.surface || '#ffffff', style: 'width:48px;height:34px;padding:2px;border-radius:8px' });
+      surfInput.addEventListener('input', (e) => { cur.surface = e.target.value; live(); });
+      card.appendChild(el('div', { class: 'grid-2' }, [
+        el('div', { class: 'field' }, [el('label', { text: 'Sfondo (aspetto avanzato)' }), bgInput]),
+        el('div', { class: 'field' }, [el('label', { text: 'Card / superficie (aspetto avanzato)' }), surfInput]),
+      ]));
+    } else if (isTrainer) {
+      card.appendChild(el('div', { class: 'nutri-disclaimer', style: 'margin:8px 0' }, [
+        el('span', { class: 'ico', text: '✨' }),
+        el('div', {}, [
+          el('strong', { text: 'Aspetto avanzato — servizio extra' }),
+          el('p', { text: 'La personalizzazione completa di sfondo e superfici (interfaccia su misura per i tuoi clienti) è un modulo extra. Chiedi all’amministratore di attivarlo per il tuo account.' }),
+        ]),
+      ]));
+    }
 
     // Logo (solo trainer)
     let logoPreview = null;
@@ -534,13 +582,21 @@
       el('button', { class: 'btn', text: 'Ripristina default', onClick: () => {
         cur.accent = ''; cur.mode = 'light'; cur.bg = ''; cur.surface = '';
         if (isTrainer) { cur.logo = null; if (logoPreview) logoPreview.style.display = 'none'; }
-        accentInput.value = '#4f46e5'; bgInput.value = '#f1f5f9'; surfInput.value = '#ffffff';
+        accentInput.value = '#4f46e5';
+        if (bgInput) bgInput.value = '#f1f5f9';
+        if (surfInput) surfInput.value = '#ffffff';
         modeRow.querySelectorAll('.week-pill').forEach((x, i) => x.classList.toggle('active', i === 0));
         refreshSwatches(); live();
       } }),
     ]));
-    c.appendChild(card);
     live(); // anteprima immediata
+    return card;
+  }
+
+  // Pagina Aspetto dedicata (solo amministratore: tema locale della sua console).
+  function renderAppearance(c) {
+    c.appendChild(topbar('Aspetto', 'Colori della tua console (solo per te)'));
+    c.appendChild(appearanceCard());
   }
 
   async function saveAppearance(cur, isTrainer) {
@@ -658,9 +714,25 @@
   }
 
   function renderSettings(c) {
-    c.appendChild(topbar('Impostazioni', 'Preferenze della tua console'));
+    c.appendChild(topbar('Impostazioni', 'Aspetto, notifiche e nutrizione della tua console'));
+
+    // 🎨 Aspetto (logo, colori, brand) — i controlli avanzati dipendono dal modulo.
+    c.appendChild(el('div', { class: 'section-title' }, [el('h4', { text: '🎨 Aspetto' })]));
+    c.appendChild(el('p', { class: 'muted', style: 'margin:0 0 8px; font-size:13px', text: 'Logo, colori e brand: valgono per la tua console e per l’app dei tuoi clienti.' }));
+    c.appendChild(appearanceCard());
+
+    // 🔔 Notifiche push (opzione)
+    c.appendChild(el('div', { class: 'section-title', style: 'margin-top:18px' }, [el('h4', { text: '🔔 Notifiche' })]));
+    c.appendChild(el('div', { class: 'card' }, [
+      el('p', { class: 'muted', text: 'Attiva gli avvisi push per essere notificato quando un cliente invia un aggiornamento.' }),
+      window.UI.pushButton(),
+      el('p', { class: 'muted', style: 'font-size:11.5px; margin-top:6px', text: 'Su iPhone funziona solo con l’app installata nella schermata Home.' }),
+    ]));
+
+    // 🥗 Nutrizione (attivazione sotto responsabilità del coach)
+    c.appendChild(el('div', { class: 'section-title', style: 'margin-top:18px' }, [el('h4', { text: '🥗 Nutrizione' })]));
     const on = isTrainer() && opts.trainer && Number(opts.trainer.nutrition_enabled);
-    const card = el('div', { class: 'card' }, [
+    c.appendChild(el('div', { class: 'card' }, [
       el('h3', { text: 'Sezione nutrizione (calorie e macronutrienti)' }),
       el('div', { class: 'nutri-disclaimer', style: 'margin:10px 0' }, [
         el('span', { class: 'ico', text: on ? '⚠️' : 'ℹ️' }),
@@ -673,8 +745,7 @@
         ? el('button', { class: 'btn btn-danger', text: 'Disattiva sezione nutrizione', onClick: () => setNutrition(0) })
         : el('button', { class: 'btn btn-primary', text: 'Attiva sotto la mia responsabilità', onClick: () => confirmNutritionOn() }),
       el('p', { class: 'muted', style: 'margin-top:10px; font-size:12px', text: 'La scelta vale per la tua console e per l’app di tutti i tuoi clienti.' }),
-    ]);
-    c.appendChild(card);
+    ]));
   }
 
   // ---- Esercizi (catalogo) ------------------------------------------------

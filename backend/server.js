@@ -181,25 +181,14 @@ api.post('/auth/trainer', wrap(async (req, res) => {
   if (!t || !auth.verifyPassword(req.body.password || '', t.password_hash)) {
     return res.status(401).json({ error: 'Credenziali non valide.' });
   }
-  res.json({
-    id: t.id, first_name: t.first_name, last_name: t.last_name, console_token: t.console_token,
-    logo: t.logo, theme_accent: t.theme_accent, theme_mode: t.theme_mode,
-    theme_bg: t.theme_bg, theme_surface: t.theme_surface,
-    suspended: t.suspended, clients_unlocked: t.clients_unlocked,
-    nutrition_enabled: t.nutrition_enabled,
-  });
+  res.json(trainerPublic(t));
 }));
 
 // Accesso trainer tramite link diretto (?t=console_token): entra senza password.
 api.get('/auth/trainer-by-token/:token', wrap(async (req, res) => {
-  const [t] = await db.q(
-    `SELECT id, first_name, last_name, console_token, logo,
-            theme_accent, theme_mode, theme_bg, theme_surface, suspended, clients_unlocked, nutrition_enabled
-     FROM trainers WHERE console_token=? AND active=1`,
-    [req.params.token]
-  );
+  const [t] = await db.q('SELECT * FROM trainers WHERE console_token=? AND active=1', [req.params.token]);
   if (!t) return res.status(404).json({ error: 'Link non valido.' });
-  res.json(t);
+  res.json(trainerPublic(t));
 }));
 
 // ---- Catalogo esercizi ----------------------------------------------------
@@ -901,6 +890,16 @@ api.post('/trainers/register', wrap(async (req, res) => {
 // cosi' un salvataggio del profilo lato admin non li azzera.
 const TRAINER_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'bio', 'photo'];
 
+// Moduli/servizi extra attivabili dall'amministratore per ogni coach.
+const MODULE_KEYS = ['advanced_appearance'];
+function parseModules(raw) {
+  if (!raw) return {};
+  try {
+    const o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return (o && typeof o === 'object') ? o : {};
+  } catch (e) { return {}; }
+}
+
 function trainerPublic(t) {
   return {
     id: t.id, first_name: t.first_name, last_name: t.last_name,
@@ -913,6 +912,7 @@ function trainerPublic(t) {
     sponsor_id: t.sponsor_id, invite_code: t.invite_code, commission_override: t.commission_override,
     suspended: t.suspended, clients_unlocked: t.clients_unlocked,
     nutrition_enabled: t.nutrition_enabled,
+    modules: parseModules(t.modules),
   };
 }
 
@@ -1037,6 +1037,19 @@ api.put('/trainers/:id/flags', requireAdmin, wrap(async (req, res) => {
   params.push(req.params.id);
   await db.q(`UPDATE trainers SET ${sets.join(', ')} WHERE id=?`, params);
   res.json({ ok: true });
+}));
+
+// L'amministratore attiva/disattiva un modulo extra per un coach.
+api.put('/trainers/:id/modules', requireAdmin, wrap(async (req, res) => {
+  const key = String(req.body.key || '').trim();
+  if (!MODULE_KEYS.includes(key)) return res.status(400).json({ error: 'Modulo sconosciuto.' });
+  const [t] = await db.q('SELECT modules FROM trainers WHERE id=?', [req.params.id]);
+  if (!t) return res.status(404).json({ error: 'Coach non trovato.' });
+  const mods = parseModules(t.modules);
+  mods[key] = !!req.body.enabled;
+  await db.q('UPDATE trainers SET modules=? WHERE id=?', [JSON.stringify(mods), req.params.id]);
+  const [full] = await db.q('SELECT * FROM trainers WHERE id=?', [req.params.id]);
+  res.json(trainerPublic(full));
 }));
 
 // Riepilogo compensi di tutti i trainer attivi (per l'amministratore).
