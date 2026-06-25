@@ -389,8 +389,10 @@ api.delete('/payments/:id', requireStaff, wrap(async (req, res) => {
 }));
 
 const CUSTOMER_FIELDS = [
-  'first_name', 'last_name', 'email', 'phone', 'birth_date', 'birth_place', 'gender', 'address',
-  'height_cm', 'weight_kg', 'goal', 'subscription', 'subscription_expiry',
+  'first_name', 'last_name', 'email', 'phone', 'birth_date', 'birth_place', 'gender',
+  'address', 'address_cap', 'address_city', 'address_province', 'address_country',
+  'height_cm', 'weight_kg', 'fat_mass_pct', 'lean_mass_kg', 'waist_cm',
+  'goal', 'subscription', 'subscription_expiry',
   'fee_amount', 'paid', 'paid_date', 'notes',
 ];
 
@@ -1141,8 +1143,10 @@ function customerForClient(c) {
   return {
     id: c.id, first_name: c.first_name, last_name: c.last_name,
     email: c.email, phone: c.phone, birth_date: c.birth_date, birth_place: c.birth_place,
-    gender: c.gender, address: c.address,
-    height_cm: c.height_cm, weight_kg: c.weight_kg, goal: c.goal,
+    gender: c.gender, address: c.address, address_cap: c.address_cap, address_city: c.address_city,
+    address_province: c.address_province, address_country: c.address_country,
+    height_cm: c.height_cm, weight_kg: c.weight_kg,
+    fat_mass_pct: c.fat_mass_pct, lean_mass_kg: c.lean_mass_kg, waist_cm: c.waist_cm, goal: c.goal,
     subscription: c.subscription, subscription_expiry: c.subscription_expiry,
     trainer_id: c.trainer_id, privacy_accepted_at: c.privacy_accepted_at,
     privacy_guardian: c.privacy_guardian, deletion_requested_at: c.deletion_requested_at,

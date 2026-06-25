@@ -57,6 +57,7 @@
     if (opts.role === 'trainer') {
       items.push({ view: 'contacts', ico: '📇', label: 'Contatti' });
       items.push({ view: 'invite', ico: '➕', label: 'Invita coach' });
+      items.push({ view: 'settings', ico: '⚙️', label: 'Impostazioni' });
     }
     items.push({ view: 'appearance', ico: '🎨', label: 'Aspetto' });
     return items;
@@ -119,6 +120,7 @@
       billing: renderBilling,
       invite: renderInvite,
       contacts: renderContacts,
+      settings: renderSettings,
     };
     (views[state.view] || renderDashboard)(content);
     updateNotifBadge();
@@ -628,6 +630,53 @@
     });
   }
 
+  // ---- Impostazioni del coach ---------------------------------------------
+  // Avviso legale sull'attivazione della sezione nutrizione (art. 348 c.p.).
+  function nutritionLegalHtml() {
+    return 'In Italia fornire diete o anche <strong>semplici consigli alimentari</strong> è riservato a medici, '
+      + 'biologi nutrizionisti e dietisti. Per un personal trainer non abilitato è <strong>esercizio abusivo della '
+      + 'professione</strong> (art. 348 c.p.; Cassazione n. 20281/2017), con sanzioni penali. Attivando questa sezione '
+      + 'te ne assumi la <strong>piena responsabilità</strong>: se non ti avvali di un nutrizionista, usa esclusivamente '
+      + 'valori orientativi e indirizza il cliente a un professionista abilitato (vedi sezione Contatti).';
+  }
+
+  async function setNutrition(val) {
+    try {
+      const t = await API.updateMySettings({ nutrition_enabled: val });
+      opts.trainer = Object.assign({}, opts.trainer, t);
+      toast(val ? 'Sezione nutrizione attivata' : 'Sezione nutrizione disattivata', 'ok');
+      navigate('settings');
+    } catch (err) { toast(err.message, 'err'); }
+  }
+
+  function confirmNutritionOn() {
+    confirmDialog(
+      'Stai per attivare la sezione nutrizione (calorie e macronutrienti). In Italia anche i semplici consigli alimentari sono riservati a medici, biologi nutrizionisti e dietisti: per un personal trainer non abilitato è esercizio abusivo della professione (art. 348 c.p., Cassazione 20281/2017). Attivando, te ne assumi la piena responsabilità. Procedere?',
+      () => setNutrition(1),
+      { danger: true, confirmLabel: 'Attivo a mia responsabilità' }
+    );
+  }
+
+  function renderSettings(c) {
+    c.appendChild(topbar('Impostazioni', 'Preferenze della tua console'));
+    const on = isTrainer() && opts.trainer && Number(opts.trainer.nutrition_enabled);
+    const card = el('div', { class: 'card' }, [
+      el('h3', { text: 'Sezione nutrizione (calorie e macronutrienti)' }),
+      el('div', { class: 'nutri-disclaimer', style: 'margin:10px 0' }, [
+        el('span', { class: 'ico', text: on ? '⚠️' : 'ℹ️' }),
+        el('div', {}, [
+          el('strong', { text: on ? 'Attualmente ATTIVA — sotto la tua responsabilità' : 'Attualmente disattivata (consigliato)' }),
+          el('p', { html: nutritionLegalHtml() }),
+        ]),
+      ]),
+      on
+        ? el('button', { class: 'btn btn-danger', text: 'Disattiva sezione nutrizione', onClick: () => setNutrition(0) })
+        : el('button', { class: 'btn btn-primary', text: 'Attiva sotto la mia responsabilità', onClick: () => confirmNutritionOn() }),
+      el('p', { class: 'muted', style: 'margin-top:10px; font-size:12px', text: 'La scelta vale per la tua console e per l’app di tutti i tuoi clienti.' }),
+    ]);
+    c.appendChild(card);
+  }
+
   // ---- Esercizi (catalogo) ------------------------------------------------
   const MUSCLE_GROUPS = ['Petto', 'Dorso', 'Spalle', 'Bicipiti', 'Tricipiti', 'Gambe', 'Addome'];
 
@@ -890,10 +939,16 @@
         field('Sesso', 'gender', existing && existing.gender, 'select', { options: [
           { value: '', label: '—' }, { value: 'M', label: 'M' }, { value: 'F', label: 'F' }, { value: 'Altro', label: 'Altro' }] }),
       ]),
-      addressField(existing && existing.address),
-      el('div', { class: 'grid-2' }, [
+      addressField(existing),
+      el('div', { class: 'section-title' }, [el('h4', { text: 'Misure e composizione corporea' })]),
+      el('div', { class: 'grid-3' }, [
         field('Altezza (cm)', 'height_cm', existing && existing.height_cm, 'number'),
         field('Peso (kg)', 'weight_kg', existing && existing.weight_kg, 'number', { step: '0.1' }),
+        field('Circonf. vita (cm)', 'waist_cm', existing && existing.waist_cm, 'number', { step: '0.1' }),
+      ]),
+      el('div', { class: 'grid-2' }, [
+        field('Massa grassa (%)', 'fat_mass_pct', existing && existing.fat_mass_pct, 'number', { step: '0.1' }),
+        field('Massa magra (kg)', 'lean_mass_kg', existing && existing.lean_mass_kg, 'number', { step: '0.1' }),
       ]),
       field('Obiettivo', 'goal', existing && existing.goal),
       field('Note', 'notes', existing && existing.notes, 'textarea'),
@@ -918,29 +973,58 @@
     });
   }
 
-  // Campo indirizzo con ricerca/autocomplete a runtime (OpenStreetMap Nominatim).
-  // Niente API key; le richieste sono debounced. Se offline, resta un input libero.
-  function addressField(value) {
-    const input = el('input', { name: 'address', type: 'text', value: value || '', placeholder: 'Via, numero civico, città…', autocomplete: 'off' });
-    const listId = 'addr-list-' + Math.random().toString(36).slice(2, 8);
-    const dl = el('datalist', { id: listId });
-    input.setAttribute('list', listId);
+  // Indirizzo strutturato (via, CAP, città, provincia, paese) con ricerca a
+  // runtime su OpenStreetMap Nominatim: scegliendo un suggerimento si compilano
+  // tutti i campi. Niente API key; richieste debounced. Offline = inserimento manuale.
+  function addressField(existing) {
+    const ex = existing || {};
+    const street = el('input', { name: 'address', type: 'text', value: ex.address || '', placeholder: 'Via e numero civico — digita per cercare', autocomplete: 'off' });
+    const cap = el('input', { name: 'address_cap', value: ex.address_cap || '', placeholder: 'CAP' });
+    const city = el('input', { name: 'address_city', value: ex.address_city || '', placeholder: 'Città' });
+    const prov = el('input', { name: 'address_province', value: ex.address_province || '', placeholder: 'Provincia' });
+    const country = el('input', { name: 'address_country', value: ex.address_country || (existing ? '' : 'Italia'), placeholder: 'Paese' });
+    const list = el('div', { style: 'position:absolute; top:100%; left:0; right:0; z-index:60; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.18); display:none; max-height:220px; overflow:auto' });
+    const hide = () => { list.style.display = 'none'; clear(list); };
     let timer = null;
-    input.addEventListener('input', () => {
-      const q = input.value.trim();
+    street.addEventListener('input', () => {
+      const q = street.value.trim();
       if (timer) clearTimeout(timer);
-      if (q.length < 4) return;
+      if (q.length < 4) { hide(); return; }
       timer = setTimeout(async () => {
         try {
-          const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=it&q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } });
+          const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&accept-language=it&q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } });
           const arr = await r.json();
-          clear(dl);
-          arr.forEach((a) => dl.appendChild(el('option', { value: a.display_name })));
-        } catch (e) { /* offline: nessun suggerimento */ }
+          clear(list);
+          if (!arr.length) { hide(); return; }
+          arr.forEach((a) => {
+            const it = el('div', { text: a.display_name, style: 'padding:8px 10px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--line)' });
+            it.addEventListener('mousedown', (e) => {
+              e.preventDefault();
+              const ad = a.address || {};
+              const road = [ad.road, ad.house_number].filter(Boolean).join(' ');
+              street.value = road || (a.display_name.split(',')[0] || '');
+              cap.value = ad.postcode || '';
+              city.value = ad.city || ad.town || ad.village || ad.municipality || '';
+              prov.value = ad.county || ad.state_district || ad.province || ad.state || '';
+              country.value = ad.country || '';
+              hide();
+            });
+            list.appendChild(it);
+          });
+          list.style.display = 'block';
+        } catch (e) { hide(); }
       }, 500);
     });
-    return el('div', { class: 'field' }, [
-      el('label', { text: 'Indirizzo (residenza / fatturazione)' }), input, dl,
+    street.addEventListener('blur', () => setTimeout(hide, 150));
+    return el('div', {}, [
+      el('div', { class: 'section-title' }, [el('h4', { text: 'Indirizzo (residenza / fatturazione)' })]),
+      el('div', { class: 'field', style: 'position:relative' }, [el('label', { text: 'Via e numero civico' }), street, list]),
+      el('div', { class: 'grid-3' }, [
+        el('div', { class: 'field' }, [el('label', { text: 'CAP' }), cap]),
+        el('div', { class: 'field' }, [el('label', { text: 'Città' }), city]),
+        el('div', { class: 'field' }, [el('label', { text: 'Provincia' }), prov]),
+      ]),
+      el('div', { class: 'field' }, [el('label', { text: 'Paese' }), country]),
     ]);
   }
 
@@ -1038,16 +1122,28 @@
       ]));
 
       // Anagrafica
+      const bmi = (cu.weight_kg && cu.height_cm)
+        ? (Number(cu.weight_kg) / Math.pow(Number(cu.height_cm) / 100, 2)) : null;
+      const fullAddr = [
+        cu.address,
+        [cu.address_cap, cu.address_city].filter(Boolean).join(' '),
+        cu.address_province, cu.address_country,
+      ].filter(Boolean).join(', ');
       const info = el('div', { class: 'card' }, [
         el('h3', { text: 'Anagrafica' }),
         el('div', { class: 'grid-3' }, [
           infoLine('Email', cu.email), infoLine('Telefono', cu.phone),
           infoLine('Nascita', cu.birth_date ? (fmtDate(cu.birth_date) + (cu.birth_place ? ' · ' + cu.birth_place : '')) : (cu.birth_place || null)),
-          infoLine('Sesso', cu.gender), infoLine('Altezza', cu.height_cm ? cu.height_cm + ' cm' : null),
+          infoLine('Sesso', cu.gender),
+          infoLine('Altezza', cu.height_cm ? cu.height_cm + ' cm' : null),
           infoLine('Peso', cu.weight_kg ? cu.weight_kg + ' kg' : null),
+          infoLine('BMI', bmi ? bmi.toFixed(1) : null),
+          infoLine('Massa grassa', cu.fat_mass_pct ? cu.fat_mass_pct + ' %' : null),
+          infoLine('Massa magra', cu.lean_mass_kg ? cu.lean_mass_kg + ' kg' : null),
+          infoLine('Circonf. vita', cu.waist_cm ? cu.waist_cm + ' cm' : null),
           infoLine('Obiettivo', cu.goal),
         ]),
-        cu.address ? infoLine('Indirizzo', cu.address) : null,
+        fullAddr ? infoLine('Indirizzo', fullAddr) : null,
         cu.notes ? el('p', { class: 'muted', text: cu.notes, style: 'margin-top:8px' }) : null,
       ]);
       c.appendChild(info);
@@ -1394,14 +1490,8 @@
           el('span', { class: 'ico', text: 'ℹ️' }),
           el('div', {}, [
             el('strong', { text: 'Sezione nutrizione disattivata' }),
-            el('p', { text: 'In Italia consigli alimentari e diete sono riservati a professionisti abilitati (medici, biologi nutrizionisti, dietisti). Consigliato: tienila spenta e collega un nutrizionista nella sezione Contatti. Puoi comunque attivarla sotto la tua responsabilità — vale per tutti i tuoi clienti.' }),
-            el('button', { class: 'btn btn-sm', style: 'margin-top:8px', text: 'Attiva comunque (a mia responsabilità)', onClick: async () => {
-              try {
-                const t = await API.updateMySettings({ nutrition_enabled: 1 });
-                opts.trainer = Object.assign({}, opts.trainer, t);
-                toast('Sezione nutrizione attivata', 'ok'); redraw();
-              } catch (err) { toast(err.message, 'err'); }
-            } }),
+            el('p', { text: 'In Italia anche i semplici consigli alimentari sono riservati a medici, biologi nutrizionisti e dietisti: per un PT non abilitato è esercizio abusivo della professione (art. 348 c.p., Cassazione 20281/2017). Consigliato: tienila spenta e collega un nutrizionista nella sezione Contatti. La puoi attivare, sotto la tua responsabilità, da Impostazioni → Sezione nutrizione.' }),
+            el('button', { class: 'btn btn-sm', style: 'margin-top:8px', text: '⚙️ Vai a Impostazioni', onClick: () => { m.close(); navigate('settings'); } }),
           ]),
         ]));
       }

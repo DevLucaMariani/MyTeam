@@ -93,8 +93,17 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS privacy_guardian VARCHAR(120);
 -- Richiesta di cancellazione dati inviata dal cliente (diritto all'oblio, art. 17).
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMP NULL DEFAULT NULL;
 -- Dati per la fatturazione: luogo di nascita e indirizzo di residenza/fatturazione.
+-- L'indirizzo e' strutturato: via, CAP, citta', provincia, paese.
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS birth_place VARCHAR(120);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS address VARCHAR(255);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_cap VARCHAR(16);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_city VARCHAR(120);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_province VARCHAR(120);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_country VARCHAR(120);
+-- Composizione corporea / indici utili al coach.
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS fat_mass_pct DECIMAL(5,2);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS lean_mass_kg DECIMAL(5,1);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS waist_cm DECIMAL(5,1);
 
 CREATE TABLE IF NOT EXISTS plans (
   id             INT AUTO_INCREMENT PRIMARY KEY,
