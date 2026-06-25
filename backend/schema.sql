@@ -88,6 +88,10 @@ ALTER TABLE customers ADD UNIQUE INDEX uq_customer_token (access_token);
 -- Consenso privacy (GDPR): data/ora in cui il cliente ha accettato l'informativa
 -- sul trattamento dei dati (inclusi dati particolari: peso, foto di monitoraggio).
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMP NULL DEFAULT NULL;
+-- Se il cliente e' minorenne, nome del genitore/tutore che presta il consenso.
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS privacy_guardian VARCHAR(120);
+-- Richiesta di cancellazione dati inviata dal cliente (diritto all'oblio, art. 17).
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMP NULL DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS plans (
   id             INT AUTO_INCREMENT PRIMARY KEY,

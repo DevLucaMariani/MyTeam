@@ -1081,6 +1081,19 @@ api.delete('/me/contacts/:id', requireStaff, wrap(async (req, res) => {
 }));
 
 // ---- Accesso cliente via token (link PWA personale) ----------------------
+// Dati del cliente esposti alla SUA app: esclude i campi gestionali del coach
+// (compensi, pagamenti, note interne) per minimizzazione dei dati (GDPR).
+function customerForClient(c) {
+  return {
+    id: c.id, first_name: c.first_name, last_name: c.last_name,
+    email: c.email, phone: c.phone, birth_date: c.birth_date, gender: c.gender,
+    height_cm: c.height_cm, weight_kg: c.weight_kg, goal: c.goal,
+    subscription: c.subscription, subscription_expiry: c.subscription_expiry,
+    trainer_id: c.trainer_id, privacy_accepted_at: c.privacy_accepted_at,
+    privacy_guardian: c.privacy_guardian, deletion_requested_at: c.deletion_requested_at,
+  };
+}
+
 api.get('/client/:token', wrap(async (req, res) => {
   const [c] = await db.q('SELECT * FROM customers WHERE access_token=?', [req.params.token]);
   if (!c) return res.status(404).json({ error: 'Link non valido o scaduto.' });
@@ -1100,15 +1113,72 @@ api.get('/client/:token', wrap(async (req, res) => {
       [c.trainer_id]
     );
   }
-  res.json({ customer: c, trainer, contacts });
+  res.json({ customer: customerForClient(c), trainer, contacts });
 }));
 
-// Il cliente accetta l'informativa privacy (consenso GDPR, registrato una volta).
+// Solo il cliente autenticato (token) puo' agire sui propri dati privacy.
+function requireClientRole(req, res) {
+  if (req.ctx && req.ctx.role === 'client') return true;
+  res.status(400).json({ error: 'Azione riservata al cliente.' });
+  return false;
+}
+
+// Il cliente accetta l'informativa privacy (consenso GDPR).
+// Se minorenne, registra anche il nome del genitore/tutore.
 api.post('/client/privacy-accept', requireClientOrStaff, wrap(async (req, res) => {
-  if (req.ctx.role !== 'client') return res.status(400).json({ error: 'Solo il cliente registra il proprio consenso.' });
-  await db.q('UPDATE customers SET privacy_accepted_at=NOW() WHERE id=? AND privacy_accepted_at IS NULL', [req.ctx.customerId]);
-  const [c] = await db.q('SELECT privacy_accepted_at FROM customers WHERE id=?', [req.ctx.customerId]);
-  res.json({ privacy_accepted_at: c ? c.privacy_accepted_at : null });
+  if (!requireClientRole(req, res)) return;
+  const guardian = (req.body.guardian || '').trim() || null;
+  await db.q('UPDATE customers SET privacy_accepted_at=NOW(), privacy_guardian=? WHERE id=?', [guardian, req.ctx.customerId]);
+  const [c] = await db.q('SELECT privacy_accepted_at, privacy_guardian FROM customers WHERE id=?', [req.ctx.customerId]);
+  res.json({ privacy_accepted_at: c ? c.privacy_accepted_at : null, privacy_guardian: c ? c.privacy_guardian : null });
+}));
+
+// Il cliente revoca il consenso: il trattamento si interrompe e l'app richiede
+// di nuovo il consenso al prossimo accesso.
+api.post('/client/privacy-revoke', requireClientOrStaff, wrap(async (req, res) => {
+  if (!requireClientRole(req, res)) return;
+  await db.q('UPDATE customers SET privacy_accepted_at=NULL WHERE id=?', [req.ctx.customerId]);
+  res.json({ ok: true });
+}));
+
+// Diritto di accesso/portabilita' (artt. 15, 20): il cliente scarica i propri dati.
+// Path senza ":token" per non essere intercettata dalla rotta GET /client/:token.
+api.get('/client-export', requireClientOrStaff, wrap(async (req, res) => {
+  if (!requireClientRole(req, res)) return;
+  const id = req.ctx.customerId;
+  const [c] = await db.q('SELECT * FROM customers WHERE id=?', [id]);
+  const profile = customerForClient(c);
+  const plans = await db.q('SELECT id, name, duration_weeks, status, start_date, end_date FROM plans WHERE customer_id=?', [id]);
+  const logs = await db.q(
+    `SELECT l.plan_id, l.exercise_id, l.week_number, l.series_index, l.actual_weight, l.completed, l.logged_at
+     FROM exercise_logs l JOIN plans p ON p.id=l.plan_id WHERE p.customer_id=?`, [id]
+  );
+  const updates = await db.q(
+    `SELECT u.plan_id, u.week_number, u.percent_complete, u.note, u.sent_at
+     FROM weekly_updates u JOIN plans p ON p.id=u.plan_id WHERE p.customer_id=?`, [id]
+  );
+  const photos = await db.q('SELECT id, plan_id, photo_type, taken_at FROM progress_photos WHERE customer_id=?', [id]);
+  res.json({
+    exported_at: new Date().toISOString(),
+    note: 'Dati personali relativi al tuo profilo MyTeam. Le immagini delle foto non sono incluse: puoi scaricarle dalla sezione Progressi.',
+    profile, plans, exercise_logs: logs, weekly_updates: updates, progress_photos: photos,
+  });
+}));
+
+// Diritto all'oblio (art. 17): il cliente richiede la cancellazione dei dati.
+// Non cancella subito: registra la richiesta e avvisa il coach, che la gestisce.
+api.post('/client/request-deletion', requireClientOrStaff, wrap(async (req, res) => {
+  if (!requireClientRole(req, res)) return;
+  const id = req.ctx.customerId;
+  await db.q('UPDATE customers SET deletion_requested_at=NOW() WHERE id=?', [id]);
+  const [c] = await db.q('SELECT first_name, last_name, trainer_id FROM customers WHERE id=?', [id]);
+  if (c) {
+    const msg = `${c.first_name} ${c.last_name} ha richiesto la cancellazione dei propri dati (diritto all'oblio).`;
+    await db.q('INSERT INTO notifications (type, audience, customer_id, message) VALUES (?,?,?,?)',
+      ['deletion_request', 'admin', id, msg]);
+    if (c.trainer_id) sendPush('coach', c.trainer_id, { title: 'MyTeam — richiesta cancellazione', body: msg, url: '/' }).catch(() => {});
+  }
+  res.json({ ok: true });
 }));
 
 app.use('/api', api);

@@ -53,12 +53,20 @@
   function showConsentGate() {
     clear(root);
     const accept = el('input', { type: 'checkbox' });
+    const minor = el('input', { type: 'checkbox' });
+    const guardianInput = el('input', { placeholder: 'Nome e cognome del genitore/tutore', style: 'margin-top:6px; display:none' });
+    minor.addEventListener('change', () => {
+      guardianInput.style.display = minor.checked ? 'block' : 'none';
+      if (!minor.checked) guardianInput.value = '';
+    });
     const btn = el('button', { class: 'btn btn-primary btn-block', text: 'Accetto e continuo', disabled: true, style: 'margin-top:14px' });
     accept.addEventListener('change', () => { btn.disabled = !accept.checked; });
     btn.addEventListener('click', async () => {
+      const guardian = minor.checked ? guardianInput.value.trim() : '';
+      if (minor.checked && !guardian) { toast('Inserisci il nome del genitore/tutore', 'err'); return; }
       btn.disabled = true; btn.textContent = 'Attendi…';
       try {
-        await API.acceptPrivacy();
+        await API.acceptPrivacy({ guardian });
         customer.privacy_accepted_at = new Date().toISOString();
         await openHome();
       } catch (err) {
@@ -77,6 +85,11 @@
         accept,
         el('span', { text: 'Ho letto l’informativa e acconsento al trattamento dei miei dati, inclusi i dati sulla salute (peso, foto di monitoraggio).' }),
       ]),
+      el('label', { style: 'display:flex; align-items:flex-start; gap:8px; margin-top:10px; font-size:14px' }, [
+        minor,
+        el('span', { text: 'Sono minorenne: il consenso è prestato da un genitore o tutore.' }),
+      ]),
+      guardianInput,
       btn,
     ])));
   }
@@ -223,6 +236,7 @@
       const st = storicoCard(); if (st) b.appendChild(st);
       if (trainer) b.appendChild(trainerCard());
       const cc = contactsCard(); if (cc) b.appendChild(cc);
+      b.appendChild(privacyDataCard());
       b.appendChild(window.UI.copyrightLine());
       return;
     }
@@ -322,6 +336,50 @@
       ]));
     });
     return card;
+  }
+
+  // Card "Privacy e dati": esercizio dei diritti GDPR dall'app del cliente.
+  function privacyDataCard() {
+    const card = el('div', { class: 'client-card' }, [
+      el('h3', { text: 'Privacy e dati' }),
+      el('p', { class: 'muted', text: 'Gestisci i tuoi dati personali e il consenso.' }),
+    ]);
+    const actions = el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap; margin-top:8px' });
+    actions.appendChild(el('button', { class: 'btn btn-sm', html: '📄 Informativa', onClick: () => window.UI.showPrivacy({ coachName: coachName(), coachEmail: trainer && trainer.email }) }));
+    actions.appendChild(el('button', { class: 'btn btn-sm', html: '⬇️ Scarica i miei dati', onClick: () => downloadMyData() }));
+    actions.appendChild(el('button', { class: 'btn btn-sm', html: '🚫 Revoca consenso', onClick: () => revokeConsent() }));
+    actions.appendChild(el('button', { class: 'btn btn-sm btn-danger', html: '🗑 Richiedi cancellazione', onClick: () => requestDeletion() }));
+    card.appendChild(actions);
+    if (customer.deletion_requested_at) {
+      card.appendChild(el('p', { class: 'muted', text: 'Hai richiesto la cancellazione dei dati. Il tuo coach la gestirà a breve.', style: 'font-size:12px; margin-top:8px' }));
+    }
+    return card;
+  }
+
+  async function downloadMyData() {
+    try {
+      const data = await API.exportMyData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'miei-dati-myteam.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) { toast('Esportazione non riuscita', 'err'); }
+  }
+
+  function revokeConsent() {
+    confirmDialog('Revocare il consenso? Per usare di nuovo l’app dovrai accettare nuovamente l’informativa.', async () => {
+      try { await API.revokePrivacy(); customer.privacy_accepted_at = null; showConsentGate(); }
+      catch (err) { toast('Operazione non riuscita', 'err'); }
+    }, { danger: true, confirmLabel: 'Revoca' });
+  }
+
+  function requestDeletion() {
+    confirmDialog('Inviare al tuo coach la richiesta di cancellazione dei tuoi dati?', async () => {
+      try { await API.requestDeletion(); customer.deletion_requested_at = new Date().toISOString(); toast('Richiesta inviata al coach', 'ok'); render(); }
+      catch (err) { toast('Operazione non riuscita', 'err'); }
+    }, { danger: true, confirmLabel: 'Richiedi' });
   }
 
   // Totale serie del piano (il completamento si misura sulle serie).

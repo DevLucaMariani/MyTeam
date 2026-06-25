@@ -156,6 +156,7 @@
     return el('p', { class: 'copyright' + (extraClass ? ' ' + extraClass : '') }, [
       document.createTextNode(`© ${year()} Luca Mariani — Tutti i diritti riservati · `), a,
       document.createTextNode(' · '), privacyLink(),
+      document.createTextNode(' · '), termsLink(),
     ]);
   }
 
@@ -203,6 +204,40 @@
   // Link testuale "Privacy" che apre l'informativa.
   function privacyLink(opts) {
     return el('a', { href: '#', text: 'Privacy', onClick: (e) => { e.preventDefault(); showPrivacy(opts); } });
+  }
+
+  // ---- Note legali / Termini di servizio ----------------------------------
+  function termsContent() {
+    const p = (html) => el('p', { html, class: 'muted', style: 'margin:0 0 6px; font-size:13px; line-height:1.5' });
+    const sec = (title, node) => el('div', { style: 'margin:12px 0' }, [
+      el('h4', { text: title, style: 'margin:0 0 4px; font-size:14px' }), node,
+    ]);
+    return el('div', {}, [
+      p('Usando MyTeam accetti i termini qui descritti.'),
+      sec('1. Oggetto', p('MyTeam è uno strumento digitale per gestire allenamenti, schede e progressi. I contenuti (schede ed eventuali indicazioni) sono predisposti dal tuo coach.')),
+      sec('2. Natura del servizio', p('La piattaforma <strong>non eroga prestazioni sanitarie né consulenza medica o nutrizionale</strong>. Le informazioni hanno carattere sportivo e informativo e non sostituiscono il parere di un medico o di un professionista abilitato.')),
+      sec('3. Avvertenze sulla salute', p('Prima di iniziare un programma di allenamento consulta un medico, soprattutto in presenza di patologie. Allenati nei tuoi limiti e interrompi in caso di dolore o malore. <strong>L’attività fisica è svolta sotto la tua responsabilità.</strong>')),
+      sec('4. Account e accesso', p('Il link personale che ricevi è riservato e personale: non condividerlo con terzi.')),
+      sec('5. Uso corretto', p('Ti impegni a non usare l’app per scopi illeciti o non autorizzati e a fornire dati veritieri.')),
+      sec('6. Proprietà intellettuale', p('Il software è di Luca Mariani. Loghi e marchi dei coach restano di proprietà dei rispettivi titolari.')),
+      sec('7. Limitazione di responsabilità', p('Nei limiti consentiti dalla legge, il fornitore non risponde di danni derivanti dall’attività fisica, da un uso improprio dell’app o da indicazioni di terzi (incluso il coach).')),
+      sec('8. Modifiche', p('I termini possono essere aggiornati; l’uso continuato dell’app vale come accettazione della versione aggiornata.')),
+      sec('9. Legge applicabile', p('I presenti termini sono regolati dalla legge italiana.')),
+    ]);
+  }
+
+  function showTerms() {
+    const m = modal({
+      title: 'Note legali / Termini di servizio',
+      wide: true,
+      body: termsContent(),
+      footer: [el('button', { class: 'btn btn-primary btn-block', text: 'Chiudi', onClick: () => m.close() })],
+    });
+    return m;
+  }
+
+  function termsLink() {
+    return el('a', { href: '#', text: 'Note legali', onClick: (e) => { e.preventDefault(); showTerms(); } });
   }
 
   // Presenza online (secondi dall'ultimo accesso, calcolati dal server).
@@ -292,5 +327,5 @@
     return b;
   }
 
-  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, privacyContent, showPrivacy, privacyLink, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot, exerciseMedia, pushButton };
+  window.UI = { el, clear, toast, modal, confirmDialog, field, formValues, initials, fmtDate, repsForWeek, showCredits, copyrightLine, privacyContent, showPrivacy, privacyLink, termsContent, showTerms, termsLink, year, isOnlineSecs, agoSecs, onlineBadge, onlineDot, exerciseMedia, pushButton };
 })();
