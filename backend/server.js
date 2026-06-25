@@ -695,6 +695,13 @@ async function writeDaysAndNutrition(conn, planId, body) {
 
 // ---- Import scheda da PDF (best-effort) ----------------------------------
 api.post('/import/pdf', requireStaff, wrap(async (req, res) => {
+  // L'import da PDF è un modulo extra: il coach lo usa solo se l'admin l'ha attivato.
+  if (req.ctx.role === 'trainer') {
+    const [t] = await db.q('SELECT modules FROM trainers WHERE id=?', [req.ctx.trainerId]);
+    if (!parseModules(t && t.modules).pdf_import) {
+      return res.status(403).json({ error: "Import da PDF non attivo per il tuo account. Chiedi all'amministratore di abilitarlo." });
+    }
+  }
   const b64 = req.body.pdf_base64 || '';
   const comma = b64.indexOf(',');
   const data = comma >= 0 ? b64.slice(comma + 1) : b64; // rimuove "data:...;base64,"
@@ -891,7 +898,7 @@ api.post('/trainers/register', wrap(async (req, res) => {
 const TRAINER_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'bio', 'photo'];
 
 // Moduli/servizi extra attivabili dall'amministratore per ogni coach.
-const MODULE_KEYS = ['advanced_appearance'];
+const MODULE_KEYS = ['advanced_appearance', 'pdf_import'];
 function parseModules(raw) {
   if (!raw) return {};
   try {

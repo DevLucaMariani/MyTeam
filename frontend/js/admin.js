@@ -277,6 +277,7 @@
   // Catalogo dei moduli extra attivabili dall'admin per un coach.
   const TRAINER_MODULES = [
     { key: 'advanced_appearance', label: 'Aspetto avanzato', desc: 'Personalizzazione completa di sfondo e superfici: interfaccia su misura per il coach e i suoi clienti.' },
+    { key: 'pdf_import', label: 'Importa scheda da PDF', desc: 'Consente al coach di creare una scheda importandola da un PDF (bozza da verificare).' },
   ];
 
   function openTrainerModules(t) {
@@ -1310,7 +1311,7 @@
     if (planId) {
       plan = await API.getPlan(planId);
     } else {
-      plan = { customer_id: customerId, name: '', duration_weeks: 8, status: 'bozza', version: 1,
+      plan = { customer_id: customerId, name: '', duration_weeks: 1, status: 'bozza', version: 1,
         start_date: '', end_date: '', price: '',
         days: [{ name: 'Giorno A', exercises: [defaultExercise()] }],
         nutrition: { allenamento: null, riposo: null } };
@@ -1328,8 +1329,8 @@
     headName.addEventListener('input', (e) => { plan.name = e.target.value; });
     headEl.insertBefore(headName, headEl.querySelector('.x'));
 
-    // Settimana su cui si stanno impostando le ripetizioni: 'all' = default (tutte).
-    let editWeek = 'all';
+    // Settimana su cui si lavora: 1 = valori base (default), 2..N = override.
+    let editWeek = 1;
     // Giorno attualmente visualizzato nell'editor (indice in plan.days).
     let editDay = 0;
 
@@ -1356,14 +1357,16 @@
         Object.keys(ex[key].overrides).forEach((w) => { ex[key].overrides[w] = fitArr(ex[key].overrides[w], n); });
       });
     }
-    function schemeArrForEdit(ex, key) {
+    // Valori della settimana w: la 1 sono i valori base (default), le altre gli override.
+    function weekArr(ex, key, w) {
       ensureScheme(ex);
-      if (editWeek === 'all') return ex[key].default;
-      return ex[key].overrides[editWeek] || ex[key].default;
+      if (Number(w) <= 1) return ex[key].default;
+      return ex[key].overrides[w] || ex[key].default;
     }
+    function schemeArrForEdit(ex, key) { return weekArr(ex, key, editWeek); }
     function setSchemeVal(ex, key, i, val) {
       ensureScheme(ex);
-      if (editWeek === 'all') { ex[key].default[i] = val; return; }
+      if (Number(editWeek) <= 1) { ex[key].default[i] = val; return; }
       if (!ex[key].overrides[editWeek]) ex[key].overrides[editWeek] = ex[key].default.slice();
       ex[key].overrides[editWeek][i] = val;
     }
@@ -1372,9 +1375,10 @@
       ensureScheme(ex);
       redraw();
     }
-    // Rimuove la settimana w: scala gli override (di tutti gli schemi) delle settimane successive.
+    // Rimuove la settimana w (>=2): scala gli override delle settimane successive.
+    // La settimana 1 è la base e non si rimuove.
     function removeWeek(w) {
-      if (plan.duration_weeks <= 1) return;
+      if (plan.duration_weeks <= 1 || Number(w) < 2) return;
       plan.days.forEach((d) => d.exercises.forEach((ex) => {
         ensureScheme(ex);
         SCHEMES.forEach((key) => {
@@ -1388,7 +1392,7 @@
         });
       }));
       plan.duration_weeks -= 1;
-      editWeek = 'all';
+      editWeek = Math.min(Number(editWeek), plan.duration_weeks) || 1;
       redraw();
     }
     function labeled(label, input) { return el('div', { class: 'field' }, [el('label', { text: label }), input]); }
@@ -1444,7 +1448,7 @@
             plan.end_date = draft.end_date || plan.end_date;
             plan.days = draft.days;
             plan._imported = true;
-            editDay = 0; editWeek = 'all';
+            editDay = 0; editWeek = 1;
             headName.value = plan.name || '';
             redraw();
             toast('Bozza importata — controlla tutto', 'ok');
@@ -1458,10 +1462,13 @@
     function redraw() {
       clear(body);
 
-      // Import da PDF (produce una bozza da verificare).
-      body.appendChild(el('div', { style: 'margin-bottom:10px' }, [
-        el('button', { class: 'btn btn-sm', html: '📄 Importa da PDF', onClick: () => importFromPdf() }),
-      ]));
+      // Import da PDF: modulo extra, attivo per l'admin o se abilitato dall'admin al coach.
+      const canPdf = opts.role === 'admin' || !!(opts.trainer && opts.trainer.modules && opts.trainer.modules.pdf_import);
+      if (canPdf) {
+        body.appendChild(el('div', { style: 'margin-bottom:10px' }, [
+          el('button', { class: 'btn btn-sm', html: '📄 Importa da PDF', onClick: () => importFromPdf() }),
+        ]));
+      }
       if (plan._imported) {
         body.appendChild(el('div', { class: 'nutri-disclaimer', style: 'margin-bottom:12px' }, [
           el('span', { class: 'ico', text: '⚠️' }),
@@ -1472,38 +1479,40 @@
         ]));
       }
 
-      // Date di inizio e fine della scheda.
+      // Data di inizio. La fine si calcola da inizio + numero di settimane (al salvataggio).
       const startInp = el('input', { type: 'date', value: (plan.start_date || '').slice(0, 10) });
       startInp.addEventListener('change', (e) => { plan.start_date = e.target.value; });
-      const endInp = el('input', { type: 'date', value: (plan.end_date || '').slice(0, 10) });
-      endInp.addEventListener('change', (e) => { plan.end_date = e.target.value; });
-      const calcBtn = el('button', { class: 'btn btn-sm', text: '↳ Calcola fine (inizio + durata)', style: 'margin-top:-4px',
-        onClick: () => {
-          if (!plan.start_date) { toast('Imposta prima la data di inizio', 'err'); return; }
-          const d = new Date(plan.start_date); d.setDate(d.getDate() + plan.duration_weeks * 7);
-          plan.end_date = d.toISOString().slice(0, 10); redraw();
-        } });
-      body.appendChild(el('div', { class: 'grid-2' }, [labeled('Data inizio', startInp), labeled('Data fine', endInp)]));
-      body.appendChild(calcBtn);
+      body.appendChild(labeled('Data inizio', startInp));
+      body.appendChild(el('small', { class: 'muted', style: 'font-size:11px; display:block; margin-top:-6px',
+        text: `Durata: ${plan.duration_weeks} settiman${plan.duration_weeks === 1 ? 'a' : 'e'} (la fine si calcola in automatico da inizio + settimane).` }));
 
-      // Settimane e ripetizioni: Default + una per settimana + "+ Settimana".
+      // Settimane: la 1 è la base; "+ Settimana" ne aggiunge una copiando la precedente.
       const weekBtns = el('div', { class: 'week-pills' });
       const mkWeekBtn = (val, label) => el('button', {
-        class: 'week-pill' + (editWeek === val ? ' active' : ''),
+        class: 'week-pill' + (Number(editWeek) === val ? ' active' : ''),
         text: label, onClick: () => { editWeek = val; redraw(); },
       });
-      weekBtns.appendChild(mkWeekBtn('all', 'Default'));
-      for (let w = 1; w <= plan.duration_weeks; w += 1) weekBtns.appendChild(mkWeekBtn(String(w), 'Sett. ' + w));
+      for (let w = 1; w <= plan.duration_weeks; w += 1) weekBtns.appendChild(mkWeekBtn(w, 'Sett. ' + w));
       weekBtns.appendChild(el('button', {
         class: 'btn btn-sm', html: '+ Settimana', style: 'flex:0 0 auto',
-        onClick: () => { if (plan.duration_weeks < 52) { plan.duration_weeks += 1; editWeek = String(plan.duration_weeks); redraw(); } },
+        onClick: () => {
+          if (plan.duration_weeks >= 52) return;
+          const last = plan.duration_weeks;
+          plan.days.forEach((d) => d.exercises.forEach((ex) => {
+            ensureScheme(ex);
+            SCHEMES.forEach((key) => { ex[key].overrides[last + 1] = weekArr(ex, key, last).slice(); });
+          }));
+          plan.duration_weeks = last + 1;
+          editWeek = plan.duration_weeks;
+          redraw();
+        },
       }));
-      const weekHint = editWeek !== 'all'
+      const weekHint = Number(editWeek) > 1
         ? el('div', { style: 'display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:6px' }, [
-          el('small', { class: 'muted', style: 'font-size:11px', text: `Stai personalizzando solo la settimana ${editWeek}. Le altre restano sul "Default".` }),
+          el('small', { class: 'muted', style: 'font-size:11px', text: `Settimana ${editWeek}: parte come copia della precedente, modificala liberamente. Le altre non cambiano.` }),
           el('button', { class: 'btn btn-sm btn-danger', text: 'Rimuovi settimana ' + editWeek, onClick: () => removeWeek(Number(editWeek)) }),
         ])
-        : el('small', { class: 'muted', style: 'font-size:11px; display:block; margin-top:6px', text: 'Le ripetizioni del "Default" valgono per tutte le settimane. Aggiungi o scegli una settimana per differenziarla.' });
+        : el('small', { class: 'muted', style: 'font-size:11px; display:block; margin-top:6px', text: 'Settimana 1: valori base della scheda. Aggiungi settimane per differenziare carichi e ripetizioni nel tempo.' });
       body.appendChild(el('div', { class: 'field' }, [
         el('label', { text: 'Settimane, ripetizioni e intensità' }), weekBtns, weekHint,
       ]));
@@ -1620,7 +1629,7 @@
           el('td', {}, intInp),
         ]));
       }
-      const wkLabel = editWeek === 'all' ? '' : ' (sett. ' + editWeek + ')';
+      const wkLabel = ' · sett. ' + editWeek;
       const seriesTable = el('table', { class: 'ex-table', style: 'margin-top:8px' }, [
         el('thead', {}, el('tr', {}, [
           el('th', { text: 'Serie' }),
@@ -1693,6 +1702,14 @@
 
     async function savePlan(activate) {
       if (!plan.name) { toast('Indica il nome della scheda', 'err'); return; }
+      // La data di fine si determina da inizio + numero di settimane configurate.
+      if (plan.start_date) {
+        const d = new Date(plan.start_date);
+        d.setDate(d.getDate() + (Number(plan.duration_weeks) || 1) * 7);
+        plan.end_date = d.toISOString().slice(0, 10);
+      } else {
+        plan.end_date = null;
+      }
       try {
         let saved;
         if (planId) saved = await API.updatePlan(planId, plan);
