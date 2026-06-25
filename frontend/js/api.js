@@ -69,6 +69,12 @@
     exportMyData: () => request('GET', '/client-export'),
     requestDeletion: () => request('POST', '/client/request-deletion'),
 
+    // Pagamenti del cliente (registro spese gestito dal coach)
+    listPayments: (customerId) => request('GET', `/customers/${customerId}/payments`),
+    createPayment: (customerId, data) => request('POST', `/customers/${customerId}/payments`, data),
+    updatePayment: (id, data) => request('PUT', `/payments/${id}`, data),
+    deletePayment: (id) => request('DELETE', `/payments/${id}`),
+
     // Rubrica del coach (collaboratori: nutrizionista, osteopata…)
     listMyContacts: () => request('GET', '/me/contacts'),
     createMyContact: (data) => request('POST', '/me/contacts', data),

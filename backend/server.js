@@ -322,7 +322,8 @@ api.get('/customers', requireStaff, wrap(async (req, res) => {
     `SELECT c.*,
             TIMESTAMPDIFF(SECOND, c.last_seen, NOW()) AS last_seen_secs,
             (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id) AS plans_count,
-            (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id AND p.status='attiva') AS active_plans
+            (SELECT COUNT(*) FROM plans p WHERE p.customer_id = c.id AND p.status='attiva') AS active_plans,
+            (SELECT COALESCE(SUM(amount),0) FROM customer_payments cp WHERE cp.customer_id = c.id AND cp.paid=0) AS unpaid_total
      FROM customers c ${onlyMine ? 'WHERE c.trainer_id = :tid' : ''} ORDER BY c.last_name, c.first_name`,
     onlyMine ? { tid: req.ctx.trainerId } : undefined
   );
@@ -336,8 +337,59 @@ api.get('/customers/:id', requireStaff, wrap(async (req, res) => {
   res.json(c);
 }));
 
+// ---- Pagamenti del cliente (registro spese gestito dal coach) -------------
+const PAYMENT_TYPES = ['abbonamento', 'schede', 'extra', 'altro'];
+function paymentBody(b) {
+  let type = String(b.type || 'altro').toLowerCase();
+  if (!PAYMENT_TYPES.includes(type)) type = 'altro';
+  let amount = (b.amount === '' || b.amount == null) ? null : Number(b.amount);
+  if (amount != null && (Number.isNaN(amount) || amount < 0)) amount = null;
+  const paid = (b.paid === 1 || b.paid === '1' || b.paid === true || b.paid === 'true') ? 1 : 0;
+  return { type, amount, paid, due_date: b.due_date || null, note: (b.note || '').trim() || null };
+}
+
+api.get('/customers/:id/payments', requireStaff, wrap(async (req, res) => {
+  if (!(await guardCustomer(req, res, req.params.id))) return;
+  res.json(await db.q(
+    'SELECT * FROM customer_payments WHERE customer_id=? ORDER BY COALESCE(due_date, created_at) DESC, id DESC',
+    [req.params.id]
+  ));
+}));
+
+api.post('/customers/:id/payments', requireStaff, wrap(async (req, res) => {
+  if (!(await guardCustomer(req, res, req.params.id))) return;
+  const p = paymentBody(req.body);
+  const r = await db.q(
+    'INSERT INTO customer_payments (customer_id, type, amount, paid, due_date, note) VALUES (?,?,?,?,?,?)',
+    [req.params.id, p.type, p.amount, p.paid, p.due_date, p.note]
+  );
+  const [row] = await db.q('SELECT * FROM customer_payments WHERE id=?', [r.insertId]);
+  res.status(201).json(row);
+}));
+
+api.put('/payments/:id', requireStaff, wrap(async (req, res) => {
+  const [pay] = await db.q('SELECT customer_id FROM customer_payments WHERE id=?', [req.params.id]);
+  if (!pay) return res.status(404).json({ error: 'Voce non trovata.' });
+  if (!(await guardCustomer(req, res, pay.customer_id))) return;
+  const p = paymentBody(req.body);
+  await db.q(
+    'UPDATE customer_payments SET type=?, amount=?, paid=?, due_date=?, note=? WHERE id=?',
+    [p.type, p.amount, p.paid, p.due_date, p.note, req.params.id]
+  );
+  const [row] = await db.q('SELECT * FROM customer_payments WHERE id=?', [req.params.id]);
+  res.json(row);
+}));
+
+api.delete('/payments/:id', requireStaff, wrap(async (req, res) => {
+  const [pay] = await db.q('SELECT customer_id FROM customer_payments WHERE id=?', [req.params.id]);
+  if (!pay) return res.status(404).json({ error: 'Voce non trovata.' });
+  if (!(await guardCustomer(req, res, pay.customer_id))) return;
+  await db.q('DELETE FROM customer_payments WHERE id=?', [req.params.id]);
+  res.status(204).end();
+}));
+
 const CUSTOMER_FIELDS = [
-  'first_name', 'last_name', 'email', 'phone', 'birth_date', 'gender',
+  'first_name', 'last_name', 'email', 'phone', 'birth_date', 'birth_place', 'gender', 'address',
   'height_cm', 'weight_kg', 'goal', 'subscription', 'subscription_expiry',
   'fee_amount', 'paid', 'paid_date', 'notes',
 ];
@@ -871,7 +923,8 @@ function effectiveRate(t, sponsoredCount) {
 }
 
 // Riepilogo compensi di un trainer: primi 2 clienti gratis, dal terzo si paga
-// il tasso percentuale sul prezzo di ogni scheda.
+// il tasso percentuale sulle voci di pagamento di tipo "abbonamento" e "schede"
+// effettivamente PAGATE. Le prestazioni extra/altro non generano compenso.
 async function trainerBilling(t) {
   const FREE = 2;
   const clients = await db.q('SELECT id FROM customers WHERE trainer_id=? ORDER BY created_at, id', [t.id]);
@@ -879,19 +932,20 @@ async function trainerBilling(t) {
   const [sp] = await db.q('SELECT COUNT(*) AS n FROM trainers WHERE sponsor_id=? AND active=1', [t.id]);
   const sponsoredCount = Number(sp.n) || 0;
   const rate = effectiveRate(t, sponsoredCount);
-  let billablePlans = 0;
+  let billableItems = 0;
   let revenue = 0;
   if (billableIds.length) {
     const [agg] = await db.q(
-      'SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS tot FROM plans WHERE price > 0 AND customer_id IN (?)',
+      `SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS tot FROM customer_payments
+       WHERE paid=1 AND amount > 0 AND type IN ('abbonamento','schede') AND customer_id IN (?)`,
       [billableIds]
     );
-    billablePlans = Number(agg.n) || 0;
+    billableItems = Number(agg.n) || 0;
     revenue = Number(agg.tot) || 0;
   }
   return {
     clients_count: clients.length, free_clients: FREE, sponsored_count: sponsoredCount,
-    rate, billable_plans: billablePlans, billable_revenue: revenue,
+    rate, billable_plans: billableItems, billable_revenue: revenue,
     owed: Math.round(revenue * rate) / 100,
   };
 }
@@ -1086,7 +1140,8 @@ api.delete('/me/contacts/:id', requireStaff, wrap(async (req, res) => {
 function customerForClient(c) {
   return {
     id: c.id, first_name: c.first_name, last_name: c.last_name,
-    email: c.email, phone: c.phone, birth_date: c.birth_date, gender: c.gender,
+    email: c.email, phone: c.phone, birth_date: c.birth_date, birth_place: c.birth_place,
+    gender: c.gender, address: c.address,
     height_cm: c.height_cm, weight_kg: c.weight_kg, goal: c.goal,
     subscription: c.subscription, subscription_expiry: c.subscription_expiry,
     trainer_id: c.trainer_id, privacy_accepted_at: c.privacy_accepted_at,

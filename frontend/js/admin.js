@@ -384,13 +384,13 @@
           ]);
         });
         card.appendChild(el('table', { class: 'table' }, [
-          el('thead', {}, el('tr', {}, ['Coach', 'Clienti', 'Portati', 'Tasso', 'Schede pag.', 'Imponibile', 'Compenso'].map((h) => el('th', { text: h })))),
+          el('thead', {}, el('tr', {}, ['Coach', 'Clienti', 'Portati', 'Tasso', 'Voci pag.', 'Imponibile', 'Compenso'].map((h) => el('th', { text: h })))),
           el('tbody', {}, trs),
         ]));
       }
       c.appendChild(card);
       c.appendChild(el('p', { class: 'muted', style: 'margin-top:12px; font-size:13px',
-        text: 'Il compenso è la percentuale sul prezzo delle schede dei clienti oltre i primi 2 (gratuiti). Il tasso scende a 5% in automatico quando un coach porta 3 coach sponsorizzati e attivi; puoi comunque forzarlo qui.' }));
+        text: 'Il compenso è la percentuale sulle voci di pagamento di tipo Abbonamento e Schede effettivamente saldate, per i clienti oltre i primi 2 (gratuiti). Le prestazioni extra non rientrano. Il tasso scende a 5% in automatico quando un coach porta 3 coach sponsorizzati e attivi; puoi comunque forzarlo qui.' }));
     } catch (err) { showError(c, err); }
   }
 
@@ -425,7 +425,7 @@
           infoLine('Coach portati (attivi)', String(me.sponsored_count)),
           infoLine('Clienti', `${me.clients_count} (primi ${me.free_clients} gratis)`),
           infoLine('Tasso attuale', me.rate + '%'),
-          infoLine('Schede a pagamento', String(me.billable_plans)),
+          infoLine('Voci conteggiate', String(me.billable_plans)),
           infoLine('Imponibile', fmtEuro(me.billable_revenue) || '€ 0,00'),
           infoLine('Compenso maturato', fmtEuro(me.owed) || '€ 0,00'),
         ]),
@@ -844,7 +844,6 @@
           el('div', { class: 'muted', text: cu.email || '—', style: 'font-size:12px' }),
         ]),
       ])),
-      el('td', { text: cu.subscription || '—' }),
       el('td', {}, paymentBadge(cu)),
       el('td', { text: String(cu.plans_count || 0) }),
       el('td', {}, Number(cu.active_plans)
@@ -853,7 +852,7 @@
     ]));
     return el('table', { class: 'table' }, [
       el('thead', {}, el('tr', {}, [
-        el('th', { text: 'Cliente' }), el('th', { text: 'Abbonamento' }), el('th', { text: 'Pagamento' }),
+        el('th', { text: 'Cliente' }), el('th', { text: 'Pagamenti' }),
         el('th', { text: 'Schede' }), el('th', { text: 'Stato' }),
       ])),
       el('tbody', {}, rows),
@@ -868,12 +867,11 @@
     return '€ ' + n.toFixed(2).replace('.', ',');
   }
 
-  // Badge stato pagamento del cliente.
+  // Badge stato pagamenti del cliente (somma delle voci non saldate).
   function paymentBadge(cu) {
-    if (Number(cu.paid)) return el('span', { class: 'badge badge-attiva', text: '✓ Pagato' });
-    const amt = fmtEuro(cu.fee_amount);
-    if (amt) return el('span', { class: 'badge badge-bozza', text: 'Da saldare ' + amt });
-    return el('span', { class: 'muted', text: '—' });
+    const unpaid = Number(cu.unpaid_total || 0);
+    if (unpaid > 0) return el('span', { class: 'badge badge-bozza', text: 'Da saldare ' + fmtEuro(unpaid) });
+    return el('span', { class: 'badge badge-attiva', text: '✓ In regola' });
   }
 
   function openCustomerForm(existing) {
@@ -888,23 +886,14 @@
       ]),
       el('div', { class: 'grid-3' }, [
         field('Data di nascita', 'birth_date', existing && (existing.birth_date || '').slice(0, 10), 'date'),
+        field('Luogo di nascita', 'birth_place', existing && existing.birth_place),
         field('Sesso', 'gender', existing && existing.gender, 'select', { options: [
           { value: '', label: '—' }, { value: 'M', label: 'M' }, { value: 'F', label: 'F' }, { value: 'Altro', label: 'Altro' }] }),
-        field('Abbonamento', 'subscription', existing && existing.subscription),
       ]),
+      addressField(existing && existing.address),
       el('div', { class: 'grid-2' }, [
         field('Altezza (cm)', 'height_cm', existing && existing.height_cm, 'number'),
         field('Peso (kg)', 'weight_kg', existing && existing.weight_kg, 'number', { step: '0.1' }),
-      ]),
-      el('div', { class: 'section-title' }, [el('h4', { text: 'Abbonamento e pagamento' })]),
-      el('div', { class: 'grid-3' }, [
-        field('Scadenza abb.', 'subscription_expiry', existing && (existing.subscription_expiry || '').slice(0, 10), 'date'),
-        field('Importo dovuto (€)', 'fee_amount', existing && existing.fee_amount, 'number', { step: '0.01' }),
-        field('Pagato', 'paid', existing ? Number(existing.paid || 0) : 0, 'select', { options: [
-          { value: 0, label: 'No' }, { value: 1, label: 'Sì' }] }),
-      ]),
-      el('div', { class: 'grid-2' }, [
-        field('Data pagamento', 'paid_date', existing && (existing.paid_date || '').slice(0, 10), 'date'),
       ]),
       field('Obiettivo', 'goal', existing && existing.goal),
       field('Note', 'notes', existing && existing.notes, 'textarea'),
@@ -929,6 +918,112 @@
     });
   }
 
+  // Campo indirizzo con ricerca/autocomplete a runtime (OpenStreetMap Nominatim).
+  // Niente API key; le richieste sono debounced. Se offline, resta un input libero.
+  function addressField(value) {
+    const input = el('input', { name: 'address', type: 'text', value: value || '', placeholder: 'Via, numero civico, città…', autocomplete: 'off' });
+    const listId = 'addr-list-' + Math.random().toString(36).slice(2, 8);
+    const dl = el('datalist', { id: listId });
+    input.setAttribute('list', listId);
+    let timer = null;
+    input.addEventListener('input', () => {
+      const q = input.value.trim();
+      if (timer) clearTimeout(timer);
+      if (q.length < 4) return;
+      timer = setTimeout(async () => {
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=it&q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } });
+          const arr = await r.json();
+          clear(dl);
+          arr.forEach((a) => dl.appendChild(el('option', { value: a.display_name })));
+        } catch (e) { /* offline: nessun suggerimento */ }
+      }, 500);
+    });
+    return el('div', { class: 'field' }, [
+      el('label', { text: 'Indirizzo (residenza / fatturazione)' }), input, dl,
+    ]);
+  }
+
+  // ---- Pagamenti del cliente ----------------------------------------------
+  const PAYMENT_TYPE_LABELS = { abbonamento: 'Abbonamento', schede: 'Schede', extra: 'Prestazione extra', altro: 'Altro' };
+
+  async function paymentsCard(customerId) {
+    const card = el('div', { class: 'card' }, [
+      el('div', { class: 'row-between' }, [
+        el('h3', { text: 'Pagamenti', style: 'margin:0' }),
+        el('button', { class: 'btn btn-sm btn-primary', html: '+ Voce', onClick: () => openPaymentForm(customerId) }),
+      ]),
+    ]);
+    let pays = [];
+    try { pays = await API.listPayments(customerId); } catch (e) { pays = []; }
+    if (!pays.length) {
+      card.appendChild(el('p', { class: 'muted', text: 'Nessuna voce. Aggiungi abbonamenti, schede o prestazioni extra.', style: 'margin-top:10px' }));
+      return card;
+    }
+    const rows = pays.map((p) => el('tr', {}, [
+      el('td', { text: PAYMENT_TYPE_LABELS[p.type] || p.type, style: 'font-weight:600' }),
+      el('td', { text: fmtEuro(p.amount) || '—' }),
+      el('td', { text: p.due_date ? fmtDate(p.due_date) : '—' }),
+      el('td', {}, Number(p.paid)
+        ? el('span', { class: 'badge badge-attiva', text: '✓ Pagato' })
+        : el('span', { class: 'badge badge-bozza', text: 'Da saldare' })),
+      el('td', { class: 'muted', text: p.note || '' }),
+      el('td', { style: 'text-align:right; white-space:nowrap' }, [
+        el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openPaymentForm(customerId, p) }),
+        el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
+          confirmDialog('Eliminare questa voce di pagamento?', async () => {
+            try { await API.deletePayment(p.id); toast('Voce eliminata', 'ok'); navigate('customer', { customerId }); }
+            catch (err) { toast(err.message, 'err'); }
+          }, { danger: true, confirmLabel: 'Elimina' });
+        } }),
+      ]),
+    ]));
+    card.appendChild(el('table', { class: 'table' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', { text: 'Tipo' }), el('th', { text: 'Importo' }), el('th', { text: 'Scadenza' }),
+        el('th', { text: 'Stato' }), el('th', { text: 'Nota' }), el('th', { text: '' }),
+      ])),
+      el('tbody', {}, rows),
+    ]));
+    const totPaid = pays.filter((p) => Number(p.paid)).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    const totDue = pays.filter((p) => !Number(p.paid)).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    card.appendChild(el('div', { class: 'muted', style: 'margin-top:8px; font-size:13px' },
+      `Incassato: ${fmtEuro(totPaid) || '€ 0,00'}  ·  Da saldare: ${fmtEuro(totDue) || '€ 0,00'}`));
+    return card;
+  }
+
+  function openPaymentForm(customerId, existing) {
+    const body = el('div', {}, [
+      el('div', { class: 'grid-2' }, [
+        field('Tipo', 'type', existing ? existing.type : 'abbonamento', 'select', { options: [
+          { value: 'abbonamento', label: 'Abbonamento' }, { value: 'schede', label: 'Schede' },
+          { value: 'extra', label: 'Prestazione extra' }, { value: 'altro', label: 'Altro' }] }),
+        field('Importo (€)', 'amount', existing && existing.amount, 'number', { step: '0.01' }),
+      ]),
+      el('div', { class: 'grid-2' }, [
+        field('Scadenza', 'due_date', existing && (existing.due_date || '').slice(0, 10), 'date'),
+        field('Pagato', 'paid', existing ? Number(existing.paid || 0) : 0, 'select', { options: [
+          { value: 0, label: 'No' }, { value: 1, label: 'Sì' }] }),
+      ]),
+      field('Nota', 'note', existing && existing.note, 'textarea'),
+    ]);
+    const m = modal({
+      title: existing ? 'Modifica voce' : 'Nuova voce di pagamento',
+      body,
+      footer: [
+        el('button', { class: 'btn', text: 'Annulla', onClick: () => m.close() }),
+        el('button', { class: 'btn btn-primary', text: 'Salva', onClick: async () => {
+          const data = formValues(body);
+          try {
+            if (existing) await API.updatePayment(existing.id, data);
+            else await API.createPayment(customerId, data);
+            m.close(); toast('Voce salvata', 'ok'); navigate('customer', { customerId });
+          } catch (err) { toast(err.message, 'err'); }
+        } }),
+      ],
+    });
+  }
+
   // ---- Dettaglio cliente --------------------------------------------------
   async function renderCustomerDetail(c) {
     loading(c);
@@ -947,29 +1042,18 @@
         el('h3', { text: 'Anagrafica' }),
         el('div', { class: 'grid-3' }, [
           infoLine('Email', cu.email), infoLine('Telefono', cu.phone),
-          infoLine('Nascita', fmtDate(cu.birth_date)),
+          infoLine('Nascita', cu.birth_date ? (fmtDate(cu.birth_date) + (cu.birth_place ? ' · ' + cu.birth_place : '')) : (cu.birth_place || null)),
           infoLine('Sesso', cu.gender), infoLine('Altezza', cu.height_cm ? cu.height_cm + ' cm' : null),
           infoLine('Peso', cu.weight_kg ? cu.weight_kg + ' kg' : null),
           infoLine('Obiettivo', cu.goal),
         ]),
+        cu.address ? infoLine('Indirizzo', cu.address) : null,
         cu.notes ? el('p', { class: 'muted', text: cu.notes, style: 'margin-top:8px' }) : null,
       ]);
       c.appendChild(info);
 
-      // Abbonamento e pagamento
-      const billing = el('div', { class: 'card' }, [
-        el('h3', { text: 'Abbonamento e pagamento' }),
-        el('div', { class: 'grid-3' }, [
-          infoLine('Abbonamento', cu.subscription), infoLine('Scadenza', fmtDate(cu.subscription_expiry)),
-          infoLine('Importo dovuto', fmtEuro(cu.fee_amount)),
-          el('div', { style: 'margin-bottom:8px' }, [
-            el('div', { class: 'muted', text: 'Stato pagamento', style: 'font-size:12px' }),
-            el('div', { style: 'margin-top:2px' }, paymentBadge(cu)),
-          ]),
-          infoLine('Data pagamento', Number(cu.paid) ? fmtDate(cu.paid_date) : null),
-        ]),
-      ]);
-      c.appendChild(billing);
+      // Pagamenti (registro voci: abbonamento, schede, prestazioni extra…)
+      c.appendChild(await paymentsCard(cu.id));
 
       // Link personale del cliente (PWA) + invio rapido via WhatsApp.
       const linkCard = clientLinkCard(cu);
@@ -1234,11 +1318,6 @@
         } });
       body.appendChild(el('div', { class: 'grid-2' }, [labeled('Data inizio', startInp), labeled('Data fine', endInp)]));
       body.appendChild(calcBtn);
-
-      // Prezzo della scheda (per il calcolo dei compensi verso l'amministratore).
-      const priceInp = el('input', { type: 'number', step: '0.01', min: '0', value: plan.price != null ? plan.price : '', placeholder: 'es. 50' });
-      priceInp.addEventListener('input', (e) => { plan.price = e.target.value; });
-      body.appendChild(labeled('Prezzo della scheda (€) — usato per i compensi', priceInp));
 
       // Settimane e ripetizioni: Default + una per settimana + "+ Settimana".
       const weekBtns = el('div', { class: 'week-pills' });

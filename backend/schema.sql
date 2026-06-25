@@ -92,6 +92,9 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMP NUL
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS privacy_guardian VARCHAR(120);
 -- Richiesta di cancellazione dati inviata dal cliente (diritto all'oblio, art. 17).
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMP NULL DEFAULT NULL;
+-- Dati per la fatturazione: luogo di nascita e indirizzo di residenza/fatturazione.
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS birth_place VARCHAR(120);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS address VARCHAR(255);
 
 CREATE TABLE IF NOT EXISTS plans (
   id             INT AUTO_INCREMENT PRIMARY KEY,
@@ -263,6 +266,21 @@ CREATE TABLE IF NOT EXISTS team_contacts (
   position    INT NOT NULL DEFAULT 0,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Registro pagamenti/spese del cliente (gestito dal coach): una riga per voce.
+-- type: abbonamento | schede | extra | altro. Compenso admin: solo abbonamento
+-- e schede effettivamente pagate (vedi trainerBilling in server.js).
+CREATE TABLE IF NOT EXISTS customer_payments (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id INT NOT NULL,
+  type        VARCHAR(20) NOT NULL DEFAULT 'altro',
+  amount      DECIMAL(10,2),
+  paid        TINYINT(1) NOT NULL DEFAULT 0,
+  due_date    DATE,
+  note        VARCHAR(255),
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Sottoscrizioni alle notifiche push (Web Push). audience: 'coach' | 'client'.
