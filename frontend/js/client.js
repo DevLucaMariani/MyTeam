@@ -195,7 +195,7 @@
           el('div', { class: 'hello', text: 'Ciao,' }),
           el('h2', { text: customer.first_name }),
         ]),
-        el('div', { style: 'display:flex; align-items:center; gap:8px' }, [window.I18N.toggleEl(), bell]),
+        el('div', { style: 'display:flex; align-items:center; gap:8px' }, [bell]),
       ]),
       (trainer && trainer.welcome_message) ? el('div', { class: 'muted', text: trainer.welcome_message, style: 'font-size:13px; margin-top:4px' }) : null,
       plan
@@ -283,7 +283,11 @@
   function viewImpostazioni(b) {
     b.appendChild(el('div', { class: 'client-card' }, [
       el('h3', { text: 'Impostazioni' }),
-      el('p', { class: 'muted', text: 'Attiva le notifiche e gestisci i tuoi dati personali.' }),
+      el('p', { class: 'muted', text: 'Lingua, notifiche e gestione dei tuoi dati personali.' }),
+    ]));
+    b.appendChild(el('div', { class: 'client-card' }, [
+      el('h3', { text: '🌐 Lingua' }),
+      el('div', { style: 'margin-top:8px' }, window.I18N.toggleEl()),
     ]));
     b.appendChild(pushCard());
     b.appendChild(privacyDataCard());
