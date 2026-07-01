@@ -249,7 +249,7 @@
                   catch (err) { toast(err.message, 'err'); }
                 }, { danger: sus, confirmLabel: sus ? 'Sospendi' : 'Riattiva' });
               } }),
-              el('button', { class: 'btn btn-sm', text: '🧩 Moduli', onClick: () => openTrainerModules(t) }),
+              el('button', { class: 'btn btn-sm btn-accent', text: '🧩 Moduli', onClick: () => openTrainerModules(t) }),
               el('button', { class: 'btn btn-sm', text: 'Modifica', onClick: () => openTrainerForm(t) }),
               el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina', onClick: () => {
                 confirmDialog(`Eliminare il coach ${t.first_name} ${t.last_name}? I suoi clienti restano, ma senza coach assegnato.`, async () => {
@@ -270,11 +270,14 @@
                   Number(t.clients_unlocked) ? el('span', { class: 'badge badge-attiva', text: 'Clienti sbloccati', style: 'margin-left:6px' }) : null,
                 ]),
                 el('div', { class: 'muted', text: '@' + t.username + (t.sponsor_id ? ' · sponsorizzato' : ''), style: 'font-size:12px' }),
+                !pending ? el('div', { style: 'display:flex; gap:4px; flex-wrap:wrap; margin-top:3px' },
+                  TRAINER_MODULES.filter((mod) => t.modules && t.modules[mod.key]).map((mod) =>
+                    el('span', { class: 'badge badge-attiva', text: '🧩 ' + mod.label, style: 'font-size:10px' }))) : null,
               ]),
             ])),
             el('td', { text: t.phone || '—' }),
             el('td', { text: pending ? '—' : `${t.customers_count || 0} clienti · ${t.rate}%` }),
-            el('td', { style: 'text-align:right; white-space:nowrap' }, actions),
+            el('td', {}, el('div', { style: 'display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end' }, actions)),
           ]);
         });
         card.appendChild(el('table', { class: 'table' }, [
