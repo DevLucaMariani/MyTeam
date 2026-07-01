@@ -1362,18 +1362,24 @@
     const digits = (cu.phone || '').replace(/\D/g, '');
     const msg = `Ciao ${cu.first_name}! Questo è il tuo link personale per la scheda di allenamento: ${link}`;
     const wa = `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
-    const linkInput = el('input', { value: link, readonly: true, style: 'font-size:13px' });
-    linkInput.addEventListener('click', () => linkInput.select());
+    const mail = `mailto:${cu.email || ''}?subject=${encodeURIComponent('Il tuo link personale MyTeam')}&body=${encodeURIComponent(msg)}`;
+    const copyLink = () => {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link).then(() => toast('Link copiato', 'ok'), () => toast('Copia non riuscita', 'err'));
+        return;
+      }
+      const tmp = el('input', { value: link, style: 'position:fixed; opacity:0' });
+      document.body.appendChild(tmp); tmp.select();
+      try { document.execCommand('copy'); toast('Link copiato', 'ok'); } catch (e) { toast('Copia non riuscita', 'err'); }
+      tmp.remove();
+    };
     return el('div', { class: 'card' }, [
       el('h3', { text: '🔗 Link personale del cliente' }),
       el('p', { class: 'muted', text: 'Invialo una volta sola: il link resta valido e i contenuti si aggiornano da soli.' }),
-      el('div', { class: 'field' }, [linkInput]),
       el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap' }, [
-        el('button', { class: 'btn', html: '📋 Copia link', onClick: () => {
-          if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => toast('Link copiato', 'ok'), () => toast('Copia non riuscita', 'err'));
-          else { linkInput.select(); document.execCommand('copy'); toast('Link copiato', 'ok'); }
-        } }),
+        el('button', { class: 'btn', html: '📋 Copia link', onClick: copyLink }),
         el('a', { class: 'btn btn-accent', href: wa, target: '_blank', html: '🟢 Invia su WhatsApp' }),
+        el('a', { class: 'btn', href: mail, html: '✉️ Invia via email' }),
       ]),
     ]);
   }
