@@ -540,7 +540,16 @@ api.get('/plans/:id', requireClientOrStaff, wrap(async (req, res) => {
 }));
 
 // Crea una scheda completa (struttura + nutrizione) in transazione.
+// La dieta giornaliera dettagliata è un modulo extra: se il coach non ce l'ha
+// attivo dall'admin, la ignoriamo (l'admin può sempre usarla).
+async function enforceDietModule(ctx, body) {
+  if (ctx.role !== 'trainer') return;
+  const [t] = await db.q('SELECT modules FROM trainers WHERE id=?', [ctx.trainerId]);
+  if (!parseModules(t && t.modules).advanced_diet) body.diet = [];
+}
+
 api.post('/plans', requireStaff, wrap(async (req, res) => {
+  await enforceDietModule(req.ctx, req.body);
   const id = await db.tx(async (conn) => {
     const planId = await insertPlanGraph(conn, req.body);
     return planId;
@@ -550,6 +559,7 @@ api.post('/plans', requireStaff, wrap(async (req, res) => {
 
 // Salva/aggiorna struttura: se la scheda e' attiva, incrementa la versione.
 api.put('/plans/:id', requireStaff, wrap(async (req, res) => {
+  await enforceDietModule(req.ctx, req.body);
   const planId = Number(req.params.id);
   await db.tx(async (conn) => {
     const [existing] = await conn.query('SELECT * FROM plans WHERE id=?', [planId]);
@@ -913,7 +923,7 @@ api.post('/trainers/register', wrap(async (req, res) => {
 const TRAINER_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'bio', 'photo'];
 
 // Moduli/servizi extra attivabili dall'amministratore per ogni coach.
-const MODULE_KEYS = ['advanced_appearance', 'pdf_import'];
+const MODULE_KEYS = ['advanced_appearance', 'pdf_import', 'advanced_diet'];
 function parseModules(raw) {
   if (!raw) return {};
   try {

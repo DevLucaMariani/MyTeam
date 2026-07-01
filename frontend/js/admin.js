@@ -290,6 +290,7 @@
   const TRAINER_MODULES = [
     { key: 'advanced_appearance', label: 'Aspetto avanzato', desc: 'Personalizzazione completa di sfondo e superfici: interfaccia su misura per il coach e i suoi clienti.' },
     { key: 'pdf_import', label: 'Importa scheda da PDF', desc: 'Consente al coach di creare una scheda importandola da un PDF (bozza da verificare).' },
+    { key: 'advanced_diet', label: 'Dieta giornaliera avanzata', desc: 'Sblocca il costruttore della dieta dettagliata (pasti con alimenti, grammi e macro) nella scheda. I consigli alimentari restano sempre disponibili.' },
   ];
 
   function openTrainerModules(t) {
@@ -1621,8 +1622,22 @@
           adviceInp,
         ]));
 
-        // #4 Dieta giornaliera dettagliata (pasti + alimenti + grammi + macro).
-        body.appendChild(dietSection());
+        // #4 Dieta giornaliera dettagliata — modulo extra attivabile dall'admin.
+        const canDiet = opts.role === 'admin' || !!(opts.trainer && opts.trainer.modules && opts.trainer.modules.advanced_diet);
+        if (canDiet) {
+          body.appendChild(dietSection());
+        } else if ((plan.diet || []).length) {
+          // Dieta già presente ma modulo non attivo: la mostro in sola lettura.
+          body.appendChild(dietSection());
+        } else {
+          body.appendChild(el('div', { class: 'nutri-disclaimer', style: 'margin-top:12px' }, [
+            el('span', { class: 'ico', text: '✨' }),
+            el('div', {}, [
+              el('strong', { text: 'Dieta giornaliera avanzata — servizio extra' }),
+              el('p', { text: 'Il costruttore della dieta dettagliata (pasti, alimenti, grammi e macro) è un modulo extra. Chiedi all’amministratore di attivarlo. I consigli alimentari qui sopra restano sempre disponibili.' }),
+            ]),
+          ]));
+        }
 
         if (opts.role === 'trainer') {
           body.appendChild(el('button', { class: 'btn btn-sm', style: 'margin-top:8px', text: 'Disattiva sezione nutrizione', onClick: async () => {
