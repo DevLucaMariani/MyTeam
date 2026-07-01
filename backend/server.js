@@ -499,6 +499,8 @@ async function loadFullPlan(planId) {
   exercises.forEach((e) => {
     e.reps_scheme = parseReps(e.reps_scheme, e.num_series);
     e.intensity_scheme = parseReps(e.intensity_scheme, e.num_series);
+    e.deload_scheme = parseReps(e.deload_scheme, e.num_series);
+    e.backoff_scheme = parseReps(e.backoff_scheme, e.num_series);
   });
   days.forEach((d) => {
     d.exercises = exercises.filter((e) => e.day_id === d.id);
@@ -510,6 +512,9 @@ async function loadFullPlan(planId) {
     allenamento: nutrition.find((n) => n.day_type === 'allenamento') || null,
     riposo: nutrition.find((n) => n.day_type === 'riposo') || null,
   };
+  // Dieta giornaliera dettagliata (pasti con alimenti/grammi/macro).
+  try { plan.diet = plan.diet_json ? JSON.parse(plan.diet_json) : []; } catch (e) { plan.diet = []; }
+  if (!Array.isArray(plan.diet)) plan.diet = [];
   plan.versions = versions;
   return plan;
 }
@@ -568,8 +573,10 @@ api.put('/plans/:id', requireStaff, wrap(async (req, res) => {
     }
 
     await conn.query(
-      'UPDATE plans SET name=?, duration_weeks=?, version=?, start_date=?, end_date=?, price=? WHERE id=?',
-      [body.name, Number(body.duration_weeks) || 8, version, body.start_date || null, body.end_date || null, priceVal(body.price), planId]
+      `UPDATE plans SET name=?, duration_weeks=?, version=?, start_date=?, end_date=?, price=?,
+              nutrition_advice=?, diet_json=? WHERE id=?`,
+      [body.name, Number(body.duration_weeks) || 8, version, body.start_date || null, body.end_date || null, priceVal(body.price),
+        (body.nutrition_advice || '').trim() || null, JSON.stringify(Array.isArray(body.diet) ? body.diet : []), planId]
     );
 
     // Riscrive struttura e nutrizione.
@@ -616,12 +623,14 @@ api.post('/plans/:id/duplicate', requireStaff, wrap(async (req, res) => {
     duration_weeks: src.duration_weeks,
     status: 'bozza',
     price: src.price,
+    nutrition_advice: src.nutrition_advice,
+    diet: src.diet,
     days: src.days.map((d) => ({
       name: d.name,
       exercises: d.exercises.map((e) => ({
         name: e.name, num_series: e.num_series, reps_scheme: e.reps_scheme, intensity_scheme: e.intensity_scheme,
         suggested_weight: e.suggested_weight, rest: e.rest, notes: e.notes, superset_group: e.superset_group,
-        unilateral: e.unilateral,
+        unilateral: e.unilateral, ex_type: e.ex_type, deload_scheme: e.deload_scheme, backoff_scheme: e.backoff_scheme,
       })),
     })),
     nutrition: src.nutrition,
@@ -640,9 +649,11 @@ function priceVal(v) {
 // Inserisce un piano completo (usato da create e duplicate).
 async function insertPlanGraph(conn, body) {
   const [r] = await conn.query(
-    'INSERT INTO plans (customer_id, name, duration_weeks, status, version, start_date, end_date, price) VALUES (?,?,?,?,1,?,?,?)',
+    `INSERT INTO plans (customer_id, name, duration_weeks, status, version, start_date, end_date, price, nutrition_advice, diet_json)
+     VALUES (?,?,?,?,1,?,?,?,?,?)`,
     [body.customer_id, body.name, Number(body.duration_weeks) || 8, body.status || 'bozza',
-      body.start_date || null, body.end_date || null, priceVal(body.price)]
+      body.start_date || null, body.end_date || null, priceVal(body.price),
+      (body.nutrition_advice || '').trim() || null, JSON.stringify(Array.isArray(body.diet) ? body.diet : [])]
   );
   const planId = r.insertId;
   await writeDaysAndNutrition(conn, planId, body);
@@ -664,13 +675,16 @@ async function writeDaysAndNutrition(conn, planId, body) {
       const numSeries = Number(e.num_series) || 1;
       const scheme = parseReps(e.reps_scheme, numSeries);
       const intensity = parseReps(e.intensity_scheme, numSeries);
+      const deload = parseReps(e.deload_scheme, numSeries);
+      const backoff = parseReps(e.backoff_scheme, numSeries);
       const exName = titleCaseName(e.name);
       await conn.query(
-        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme, superset_group, unilateral)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme, superset_group, unilateral, ex_type, deload_scheme, backoff_scheme)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [dayId, j, exName || 'Esercizio', numSeries,
           e.suggested_weight || null, e.rest || null, e.notes || null, JSON.stringify(scheme), JSON.stringify(intensity),
-          (e.superset_group || '').trim() || null, e.unilateral ? 1 : 0]
+          (e.superset_group || '').trim() || null, e.unilateral ? 1 : 0,
+          (e.ex_type || '').trim() || null, JSON.stringify(deload), JSON.stringify(backoff)]
       );
       // Salva il nome nel catalogo se non gia' presente (anche se rinominato a mano),
       // con serie, ripetizioni e intensita' come default per i riutilizzi futuri.

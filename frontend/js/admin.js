@@ -7,6 +7,18 @@
   let opts = { role: 'admin' };
   let state = { view: 'dashboard' };
 
+  // Tipologie di esercizio con colore associato (riconoscibili a colpo d'occhio).
+  const EX_TYPES = [
+    { value: '', label: 'Standard', color: '' },
+    { value: 'fondamentale', label: 'Fondamentale', color: '#e11d48' },
+    { value: 'complementare', label: 'Complementare', color: '#0ea5e9' },
+    { value: 'monoarticolare', label: 'Monoarticolare', color: '#059669' },
+    { value: 'superset', label: 'Superset', color: '#d97706' },
+    { value: 'cardio', label: 'Cardio', color: '#7c3aed' },
+    { value: 'altro', label: 'Altro', color: '#64748b' },
+  ];
+  const exType = (v) => EX_TYPES.find((t) => t.value === (v || '')) || EX_TYPES[0];
+
   function mount(container, options) {
     root = container;
     opts = Object.assign({ role: 'admin' }, options || {});
@@ -1373,12 +1385,16 @@
     let exClipboard = null;
 
     // Schemi per-serie/per-settimana presenti su ogni esercizio.
-    const SCHEMES = ['reps_scheme', 'intensity_scheme'];
+    // deload/backoff sono usati (mostrati) solo per gli esercizi "fondamentale".
+    const SCHEMES = ['reps_scheme', 'intensity_scheme', 'deload_scheme', 'backoff_scheme'];
 
     function defaultExercise() {
       return { name: '', num_series: 3, suggested_weight: '', rest: '', notes: '', superset_group: '', unilateral: 0,
+        ex_type: '',
         reps_scheme: { default: ['', '', ''], overrides: {} },
-        intensity_scheme: { default: ['', '', ''], overrides: {} } };
+        intensity_scheme: { default: ['', '', ''], overrides: {} },
+        deload_scheme: { default: ['', '', ''], overrides: {} },
+        backoff_scheme: { default: ['', '', ''], overrides: {} } };
     }
     function fitArr(arr, n) {
       const o = [];
@@ -1594,6 +1610,20 @@
           nutriBlock('Giorno di allenamento', 'allenamento'),
           nutriBlock('Giorno di riposo', 'riposo'),
         ]));
+
+        // #3 Consigli alimentari (testo libero, sezione dedicata).
+        const adviceInp = el('textarea', { rows: 3, placeholder: 'Consigli generali: idratazione, timing dei pasti, alimenti consigliati o da limitare…' });
+        adviceInp.value = plan.nutrition_advice || '';
+        adviceInp.addEventListener('input', (e) => { plan.nutrition_advice = e.target.value; });
+        body.appendChild(el('div', { class: 'card', style: 'margin-top:12px' }, [
+          el('h3', { text: '💬 Consigli alimentari' }),
+          el('p', { class: 'muted', style: 'font-size:12px', text: 'Testo libero mostrato al cliente nella sezione Nutrizione (separato dalla scheda esercizi).' }),
+          adviceInp,
+        ]));
+
+        // #4 Dieta giornaliera dettagliata (pasti + alimenti + grammi + macro).
+        body.appendChild(dietSection());
+
         if (opts.role === 'trainer') {
           body.appendChild(el('button', { class: 'btn btn-sm', style: 'margin-top:8px', text: 'Disattiva sezione nutrizione', onClick: async () => {
             try {
@@ -1664,28 +1694,37 @@
       const restInp = el('input', { value: ex.rest || '', placeholder: "es. 90''", onInput: (e) => { ex.rest = e.target.value; } });
       const noteInp = el('input', { value: ex.notes || '', placeholder: "Nota valida per tutto l'esercizio", onInput: (e) => { ex.notes = e.target.value; } });
 
-      // Tabella serie -> ripetizioni + intensita' (per la settimana selezionata)
-      const reps = schemeArrForEdit(ex, 'reps_scheme');
-      const inten = schemeArrForEdit(ex, 'intensity_scheme');
+      // Tipologia esercizio (con colore). I "fondamentale" hanno colonne extra.
+      const typeSel = el('select', {}, EX_TYPES.map((t) => {
+        const o = el('option', { value: t.value, text: t.label });
+        if ((ex.ex_type || '') === t.value) o.selected = true;
+        return o;
+      }));
+      typeSel.addEventListener('change', (e) => { ex.ex_type = e.target.value; redraw(); });
+
+      // Tabella serie: colonne in base alla tipologia (fondamentale = 4 colonne).
+      const isFond = (ex.ex_type === 'fondamentale');
+      const cols = isFond
+        ? [{ key: 'reps_scheme', label: 'Ripetizioni', ph: 'rip.' },
+          { key: 'intensity_scheme', label: 'RPE / RIR', ph: 'es. @8 / RIR2' },
+          { key: 'deload_scheme', label: '% scarico', ph: 'es. -10%' },
+          { key: 'backoff_scheme', label: 'Back off', ph: 'es. 2×12' }]
+        : [{ key: 'reps_scheme', label: 'Ripetizioni', ph: 'rip.' },
+          { key: 'intensity_scheme', label: 'Intensità', ph: 'es. @8 / 80%' }];
+      const wkLabel = ' · sett. ' + editWeek;
       const rows = [];
       for (let s = 0; s < ex.num_series; s += 1) {
-        const repInp = el('input', { value: reps[s] != null ? reps[s] : '', placeholder: 'rip.', style: 'width:110px' });
-        repInp.addEventListener('input', (e) => setSchemeVal(ex, 'reps_scheme', s, e.target.value));
-        const intInp = el('input', { value: inten[s] != null ? inten[s] : '', placeholder: 'es. @8 / 80%', style: 'width:120px' });
-        intInp.addEventListener('input', (e) => setSchemeVal(ex, 'intensity_scheme', s, e.target.value));
-        rows.push(el('tr', {}, [
-          el('td', { class: 'muted', text: 'Serie ' + (s + 1) }),
-          el('td', {}, repInp),
-          el('td', {}, intInp),
-        ]));
+        const cells = [el('td', { class: 'muted', text: 'Serie ' + (s + 1) })];
+        cols.forEach((col) => {
+          const arr = schemeArrForEdit(ex, col.key);
+          const inp = el('input', { value: arr[s] != null ? arr[s] : '', placeholder: col.ph, style: 'width:100%; min-width:64px' });
+          inp.addEventListener('input', (e) => setSchemeVal(ex, col.key, s, e.target.value));
+          cells.push(el('td', {}, inp));
+        });
+        rows.push(el('tr', {}, cells));
       }
-      const wkLabel = ' · sett. ' + editWeek;
       const seriesTable = el('table', { class: 'ex-table', style: 'margin-top:8px' }, [
-        el('thead', {}, el('tr', {}, [
-          el('th', { text: 'Serie' }),
-          el('th', { text: 'Ripetizioni' + wkLabel }),
-          el('th', { text: 'Intensità' + wkLabel }),
-        ])),
+        el('thead', {}, el('tr', {}, [el('th', { text: 'Serie' })].concat(cols.map((c) => el('th', { text: c.label + wkLabel }))))),
         el('tbody', {}, rows),
       ]);
 
@@ -1709,19 +1748,77 @@
       const delBtn = el('button', { class: 'btn btn-sm btn-danger', text: '🗑 Elimina', title: 'Rimuovi esercizio',
         onClick: () => { d.exercises.splice(ei, 1); redraw(); } });
 
-      return el('div', { class: 'card', style: 'margin-bottom:12px; padding:14px' }, [
+      const tcolor = exType(ex.ex_type).color;
+      return el('div', { class: 'card', style: 'margin-bottom:12px; padding:14px' + (tcolor ? '; border-left:4px solid ' + tcolor : '') }, [
         el('div', { style: 'display:flex; gap:8px; align-items:center; flex-wrap:wrap' }, [
           el('div', { style: 'flex:1 1 240px; min-width:180px' }, nameInp),
+          ex.ex_type ? el('span', { class: 'badge', style: 'background:' + tcolor + '22; color:' + tcolor + '; align-self:center', text: exType(ex.ex_type).label }) : null,
           ex.superset_group ? el('span', { class: 'badge badge-attiva', text: '🔗 Superset ' + ex.superset_group, style: 'align-self:center' }) : null,
           uniBtn, pickBtn, copyBtn, delBtn,
         ]),
         el('div', { class: 'grid-3', style: 'margin-top:10px' }, [
-          labeled('N. serie', seriesInp), labeled('Peso suggerito', weightInp), labeled('Recupero', restInp),
+          labeled('Tipologia', typeSel), labeled('N. serie', seriesInp), labeled('Recupero', restInp),
         ]),
+        labeled('Peso suggerito', weightInp),
         labeled('Superset (stesso codice = esercizi eseguiti insieme)', ssSel),
         labeled('Nota', noteInp),
         seriesTable,
       ]);
+    }
+
+    // Costruttore della dieta giornaliera: pasti con alimenti, grammi e macro.
+    function dietSection() {
+      if (!Array.isArray(plan.diet)) plan.diet = [];
+      const wrap = el('div', { class: 'card', style: 'margin-top:12px' }, [
+        el('div', { class: 'row-between' }, [
+          el('h3', { text: '🍽️ Dieta giornaliera (dettaglio)', style: 'margin:0' }),
+          el('button', { class: 'btn btn-sm btn-primary', html: '+ Pasto', onClick: () => { plan.diet.push({ name: 'Pasto ' + (plan.diet.length + 1), items: [] }); redraw(); } }),
+        ]),
+        el('p', { class: 'muted', style: 'font-size:12px', text: 'Facoltativa: pasti con alimenti, grammi e macro. Visibile al cliente nella sezione Nutrizione.' }),
+      ]);
+      const daySpan = el('div', { style: 'margin-top:10px; font-weight:800; font-size:13px' });
+      const recalc = () => {
+        let kcal = 0; let p = 0; let cbs = 0; let fat = 0;
+        plan.diet.forEach((meal) => (meal.items || []).forEach((it) => {
+          kcal += Number(it.kcal) || 0; p += Number(it.protein) || 0; cbs += Number(it.carbs) || 0; fat += Number(it.fat) || 0;
+        }));
+        daySpan.textContent = `Totale giorno: ${Math.round(kcal)} kcal · P ${Math.round(p)} g · C ${Math.round(cbs)} g · G ${Math.round(fat)} g`;
+      };
+      plan.diet.forEach((meal, mi) => {
+        if (!Array.isArray(meal.items)) meal.items = [];
+        const nameInp = el('input', { value: meal.name || '', placeholder: 'Nome pasto (es. Colazione)', onInput: (e) => { meal.name = e.target.value; } });
+        const itemRows = el('tbody', {});
+        meal.items.forEach((it, ii) => {
+          const mk = (key, ph, w) => {
+            const i = el('input', { value: it[key] != null ? it[key] : '', placeholder: ph, style: 'width:' + (w || '64px') });
+            i.addEventListener('input', (e) => { it[key] = e.target.value; recalc(); });
+            return i;
+          };
+          itemRows.appendChild(el('tr', {}, [
+            el('td', {}, mk('food', 'Alimento', '100%')),
+            el('td', {}, mk('grams', 'g')),
+            el('td', {}, mk('kcal', 'kcal')),
+            el('td', {}, mk('protein', 'P')),
+            el('td', {}, mk('carbs', 'C')),
+            el('td', {}, mk('fat', 'G')),
+            el('td', {}, el('button', { class: 'btn btn-sm btn-danger', text: '×', onClick: () => { meal.items.splice(ii, 1); redraw(); } })),
+          ]));
+        });
+        wrap.appendChild(el('div', { class: 'card', style: 'margin-top:10px; padding:10px' }, [
+          el('div', { class: 'row-between' }, [
+            el('div', { style: 'flex:1' }, nameInp),
+            el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina pasto', onClick: () => { plan.diet.splice(mi, 1); redraw(); } }),
+          ]),
+          el('table', { class: 'ex-table', style: 'margin-top:8px' }, [
+            el('thead', {}, el('tr', {}, ['Alimento', 'g', 'kcal', 'P', 'C', 'G', ''].map((h) => el('th', { text: h })))),
+            itemRows,
+          ]),
+          el('button', { class: 'btn btn-sm', html: '+ Alimento', style: 'margin-top:6px', onClick: () => { meal.items.push({}); redraw(); } }),
+        ]));
+      });
+      wrap.appendChild(daySpan);
+      recalc();
+      return wrap;
     }
 
     function nutriBlock(title, type) {

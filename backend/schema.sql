@@ -188,6 +188,17 @@ ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS superset_group VARCHAR(8);
 -- Esercizio monolaterale (unilaterale): si esegue un lato alla volta.
 -- Il cliente vede l'indicazione "per lato".
 ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS unilateral TINYINT(1) NOT NULL DEFAULT 0;
+-- Tipologia esercizio (fondamentale/monoarticolare/complementare/superset/cardio...)
+-- con colore associato lato UI. Per i "fondamentale" si usano colonne extra
+-- per-serie: RPE/RIR (in intensity_scheme), % di scarico (deload) e back off.
+ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS ex_type VARCHAR(24);
+ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS deload_scheme LONGTEXT;
+ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS backoff_scheme LONGTEXT;
+
+-- Nutrizione: consigli alimentari (testo libero) e dieta giornaliera dettagliata
+-- (JSON: pasti con alimenti, grammi e macro). Entrambi a livello di scheda.
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS nutrition_advice TEXT;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS diet_json LONGTEXT;
 
 -- Piano nutrizionale: una riga per tipo di giorno (allenamento / riposo).
 CREATE TABLE IF NOT EXISTS nutrition (
