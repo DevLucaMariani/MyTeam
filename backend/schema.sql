@@ -95,6 +95,9 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMP NUL
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS privacy_guardian VARCHAR(120);
 -- Richiesta di cancellazione dati inviata dal cliente (diritto all'oblio, art. 17).
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMP NULL DEFAULT NULL;
+-- Visibilità nel "Team": se 1, il cliente (solo nome e cognome) appare agli altri
+-- clienti dello stesso coach. Opt-in: default 0 (privato).
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS team_visible TINYINT(1) NOT NULL DEFAULT 0;
 -- Dati per la fatturazione: luogo di nascita e indirizzo di residenza/fatturazione.
 -- L'indirizzo e' strutturato: via, CAP, citta', provincia, paese.
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS birth_place VARCHAR(120);

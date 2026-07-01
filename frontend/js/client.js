@@ -13,6 +13,7 @@
   let plans = [];        // elenco schede del cliente (attive + concluse)
   let trainer = null;    // trainer del cliente (mostrato nella Home)
   let teamContacts = []; // rubrica del coach (nutrizionista, osteopata…)
+  let teamMembers = []; // compagni di team visibili (solo nome e cognome)
   let curWeek = 1;
   let tab = 'home';
   let notifications = [];
@@ -20,7 +21,7 @@
   // Il cliente entra esclusivamente dal proprio link personale (?c=token).
   function mountByToken(container, token) {
     root = container;
-    customer = null; plan = null; plans = []; trainer = null; teamContacts = []; tab = 'home'; curWeek = 1; notifications = [];
+    customer = null; plan = null; plans = []; trainer = null; teamContacts = []; teamMembers = []; tab = 'home'; curWeek = 1; notifications = [];
     loadByToken(token);
   }
 
@@ -37,6 +38,7 @@
       customer = data.customer;
       trainer = data.trainer || null;
       teamContacts = data.contacts || [];
+      teamMembers = data.team || [];
       // Applica il tema (white-label) del trainer all'app del cliente.
       window.Theme.apply(window.Theme.fromTrainer(trainer));
       // Consenso privacy (GDPR): obbligatorio prima di usare l'app.
@@ -177,7 +179,7 @@
     wrap.appendChild(bottomNav());
     root.appendChild(wrap);
 
-    const tabs = { home: viewHome, scheda: viewScheda, nutrizione: viewNutrizione, progressi: viewProgressi, impostazioni: viewImpostazioni };
+    const tabs = { home: viewHome, scheda: viewScheda, nutrizione: viewNutrizione, progressi: viewProgressi, team: viewTeam, impostazioni: viewImpostazioni };
     (tabs[tab] || viewHome)(body);
   }
 
@@ -214,6 +216,7 @@
       { id: 'scheda', ico: '🏋️', label: 'Scheda' },
       nutritionOn() ? { id: 'nutrizione', ico: '🥗', label: 'Nutrizione' } : null,
       { id: 'progressi', ico: '📈', label: 'Progressi' },
+      { id: 'team', ico: '👥', label: 'Team' },
       { id: 'impostazioni', ico: '⚙️', label: 'Impostazioni' },
     ].filter(Boolean);
     return el('nav', { class: 'bottom-nav', style: `grid-template-columns: repeat(${items.length}, 1fr)` }, items.map((it) => el('button', {
@@ -238,8 +241,6 @@
     if (!plan) {
       b.appendChild(noPlan());
       const st = storicoCard(); if (st) b.appendChild(st);
-      if (trainer) b.appendChild(trainerCard());
-      const cc = contactsCard(); if (cc) b.appendChild(cc);
       b.appendChild(window.UI.copyrightLine());
       return;
     }
@@ -274,8 +275,23 @@
     ]));
 
     const st = storicoCard(); if (st) b.appendChild(st);
+    b.appendChild(window.UI.copyrightLine());
+  }
+
+  // ---- Team: coach, contatti utili e compagni di team ---------------------
+  function viewTeam(b) {
     if (trainer) b.appendChild(trainerCard());
     const cc = contactsCard(); if (cc) b.appendChild(cc);
+    const card = el('div', { class: 'client-card' }, [el('h3', { text: '👥 Compagni di team' })]);
+    if (!teamMembers.length) {
+      card.appendChild(el('p', { class: 'muted', text: 'Nessun compagno visibile per ora. Puoi scegliere di comparire nel Team dalle Impostazioni.' }));
+    } else {
+      teamMembers.forEach((mm) => card.appendChild(el('div', { style: 'display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line)' }, [
+        el('span', { class: 'avatar', text: window.UI.initials(mm.first_name, mm.last_name) }),
+        el('div', { text: `${mm.first_name} ${mm.last_name}`, style: 'font-weight:600' }),
+      ])));
+    }
+    b.appendChild(card);
     b.appendChild(window.UI.copyrightLine());
   }
 
@@ -288,6 +304,23 @@
     b.appendChild(el('div', { class: 'client-card' }, [
       el('h3', { text: '🌐 Lingua' }),
       el('div', { style: 'margin-top:8px' }, window.I18N.toggleEl()),
+    ]));
+    // Visibilità nel Team (opt-in): il cliente sceglie se comparire agli altri.
+    const teamChk = el('input', { type: 'checkbox' });
+    teamChk.checked = !!Number(customer.team_visible);
+    teamChk.addEventListener('change', async () => {
+      try {
+        const r = await API.setTeamVisibility(teamChk.checked);
+        customer.team_visible = r.team_visible;
+        toast(Number(r.team_visible) ? 'Ora sei visibile nel Team' : 'Non sei più visibile nel Team', 'ok');
+      } catch (e) { teamChk.checked = !teamChk.checked; toast('Operazione non riuscita', 'err'); }
+    });
+    b.appendChild(el('div', { class: 'client-card' }, [
+      el('h3', { text: '👥 Team' }),
+      el('label', { style: 'display:flex; align-items:flex-start; gap:8px; margin-top:8px; cursor:pointer; font-size:14px' }, [
+        teamChk,
+        el('span', { text: 'Mostra il mio nome e cognome agli altri clienti del coach nella sezione Team.' }),
+      ]),
     ]));
     b.appendChild(pushCard());
     b.appendChild(privacyDataCard());

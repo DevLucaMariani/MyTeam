@@ -1195,6 +1195,7 @@ function customerForClient(c) {
     subscription: c.subscription, subscription_expiry: c.subscription_expiry,
     trainer_id: c.trainer_id, privacy_accepted_at: c.privacy_accepted_at,
     privacy_guardian: c.privacy_guardian, deletion_requested_at: c.deletion_requested_at,
+    team_visible: c.team_visible,
   };
 }
 
@@ -1203,6 +1204,7 @@ api.get('/client/:token', wrap(async (req, res) => {
   if (!c) return res.status(404).json({ error: 'Link non valido o scaduto.' });
   let trainer = null;
   let contacts = [];
+  let team = [];
   if (c.trainer_id) {
     const [t] = await db.q(
       `SELECT first_name, last_name, email, phone, bio, photo, logo,
@@ -1216,8 +1218,22 @@ api.get('/client/:token', wrap(async (req, res) => {
       'SELECT id, name, role, phone, email, notes FROM team_contacts WHERE trainer_id=? ORDER BY position, id',
       [c.trainer_id]
     );
+    // Compagni di team: altri clienti dello stesso coach che hanno scelto di essere
+    // visibili. Solo nome e cognome (niente contatti), per riservatezza.
+    team = await db.q(
+      'SELECT first_name, last_name FROM customers WHERE trainer_id=? AND team_visible=1 AND id<>? ORDER BY first_name, last_name',
+      [c.trainer_id, c.id]
+    );
   }
-  res.json({ customer: customerForClient(c), trainer, contacts });
+  res.json({ customer: customerForClient(c), trainer, contacts, team });
+}));
+
+// Il cliente sceglie se comparire nel "Team" (visibile agli altri clienti del coach).
+api.post('/client/team-visibility', requireClientOrStaff, wrap(async (req, res) => {
+  if (!requireClientRole(req, res)) return;
+  const visible = req.body.visible ? 1 : 0;
+  await db.q('UPDATE customers SET team_visible=? WHERE id=?', [visible, req.ctx.customerId]);
+  res.json({ team_visible: visible });
 }));
 
 // Solo il cliente autenticato (token) puo' agire sui propri dati privacy.

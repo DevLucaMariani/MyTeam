@@ -1373,14 +1373,16 @@
       try { document.execCommand('copy'); toast('Link copiato', 'ok'); } catch (e) { toast('Copia non riuscita', 'err'); }
       tmp.remove();
     };
+    const actions = el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap' }, [
+      el('button', { class: 'btn', html: '📋 Copia link', onClick: copyLink }),
+    ]);
+    // WhatsApp ed email attivi solo se il cliente ha rispettivamente telefono/email.
+    if (cu.phone) actions.appendChild(el('a', { class: 'btn btn-accent', href: wa, target: '_blank', html: '🟢 Invia su WhatsApp' }));
+    if (cu.email) actions.appendChild(el('a', { class: 'btn', href: mail, html: '✉️ Invia via email' }));
     return el('div', { class: 'card' }, [
       el('h3', { text: '🔗 Link personale del cliente' }),
       el('p', { class: 'muted', text: 'Invialo una volta sola: il link resta valido e i contenuti si aggiornano da soli.' }),
-      el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap' }, [
-        el('button', { class: 'btn', html: '📋 Copia link', onClick: copyLink }),
-        el('a', { class: 'btn btn-accent', href: wa, target: '_blank', html: '🟢 Invia su WhatsApp' }),
-        el('a', { class: 'btn', href: mail, html: '✉️ Invia via email' }),
-      ]),
+      actions,
     ]);
   }
 

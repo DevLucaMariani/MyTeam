@@ -66,6 +66,7 @@
     // Privacy del cliente (GDPR): consenso, revoca, esportazione, cancellazione
     acceptPrivacy: (data) => request('POST', '/client/privacy-accept', data || {}),
     revokePrivacy: () => request('POST', '/client/privacy-revoke'),
+    setTeamVisibility: (visible) => request('POST', '/client/team-visibility', { visible }),
     exportMyData: () => request('GET', '/client-export'),
     requestDeletion: () => request('POST', '/client/request-deletion'),
 
