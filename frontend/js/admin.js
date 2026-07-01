@@ -115,7 +115,7 @@
         }, [el('span', { class: 'ico', text: '↩' }), el('span', { text: 'Esci' })]),
       el('button', { class: 'nav-item', style: 'opacity:.65; font-size:12px', onClick: () => window.UI.showCredits(),
         }, [el('span', { class: 'ico', text: 'ⓘ' }), el('span', { text: 'Credits' })]),
-      el('div', { style: 'padding:8px 14px' }, window.I18N.toggleEl()),
+      opts.role === 'admin' ? el('div', { style: 'padding:8px 14px' }, window.I18N.toggleEl()) : null,
     ]);
 
     const content = el('main', { class: 'content', id: 'admin-content' });
@@ -732,10 +732,17 @@
   }
 
   function renderSettings(c) {
-    c.appendChild(topbar('Impostazioni', 'Aspetto, notifiche e nutrizione della tua console'));
+    c.appendChild(topbar('Impostazioni', 'Lingua, aspetto, notifiche e nutrizione della tua console'));
+
+    // 🌐 Lingua (Italiano/Inglese)
+    c.appendChild(el('div', { class: 'section-title' }, [el('h4', { text: '🌐 Lingua' })]));
+    c.appendChild(el('div', { class: 'card' }, [
+      el('p', { class: 'muted', style: 'margin:0 0 8px; font-size:13px', text: 'Lingua della tua console.' }),
+      window.I18N.toggleEl(),
+    ]));
 
     // 🎨 Aspetto (logo, colori, brand) — i controlli avanzati dipendono dal modulo.
-    c.appendChild(el('div', { class: 'section-title' }, [el('h4', { text: '🎨 Aspetto' })]));
+    c.appendChild(el('div', { class: 'section-title', style: 'margin-top:18px' }, [el('h4', { text: '🎨 Aspetto' })]));
     c.appendChild(el('p', { class: 'muted', style: 'margin:0 0 8px; font-size:13px', text: 'Logo, colori e brand: valgono per la tua console e per l’app dei tuoi clienti.' }));
     c.appendChild(appearanceCard());
 
