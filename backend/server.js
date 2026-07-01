@@ -945,7 +945,7 @@ function trainerPublic(t) {
     brand_name: t.brand_name, welcome_message: t.welcome_message,
     sponsor_id: t.sponsor_id, invite_code: t.invite_code, commission_override: t.commission_override,
     suspended: t.suspended, clients_unlocked: t.clients_unlocked,
-    nutrition_enabled: t.nutrition_enabled,
+    nutrition_enabled: t.nutrition_enabled, team_enabled: t.team_enabled,
     modules: parseModules(t.modules),
   };
 }
@@ -1129,8 +1129,14 @@ api.put('/me/branding', requireStaff, wrap(async (req, res) => {
 // Vale per la sua console e per l'app di TUTTI i suoi clienti.
 api.put('/me/settings', requireStaff, wrap(async (req, res) => {
   if (req.ctx.role !== 'trainer') return res.status(400).json({ error: 'Solo i trainer hanno impostazioni personali.' });
-  const enabled = req.body.nutrition_enabled ? 1 : 0;
-  await db.q('UPDATE trainers SET nutrition_enabled=? WHERE id=?', [enabled, req.ctx.trainerId]);
+  const sets = [];
+  const params = [];
+  if ('nutrition_enabled' in req.body) { sets.push('nutrition_enabled=?'); params.push(req.body.nutrition_enabled ? 1 : 0); }
+  if ('team_enabled' in req.body) { sets.push('team_enabled=?'); params.push(req.body.team_enabled ? 1 : 0); }
+  if (sets.length) {
+    params.push(req.ctx.trainerId);
+    await db.q(`UPDATE trainers SET ${sets.join(', ')} WHERE id=?`, params);
+  }
   const [t] = await db.q('SELECT * FROM trainers WHERE id=?', [req.ctx.trainerId]);
   res.json(trainerPublic(t));
 }));
@@ -1210,7 +1216,7 @@ api.get('/client/:token', wrap(async (req, res) => {
   if (c.trainer_id) {
     const [t] = await db.q(
       `SELECT first_name, last_name, email, phone, bio, photo, logo,
-              theme_accent, theme_mode, theme_bg, theme_surface, nutrition_enabled,
+              theme_accent, theme_mode, theme_bg, theme_surface, nutrition_enabled, team_enabled,
               brand_name, welcome_message
        FROM trainers WHERE id=?`,
       [c.trainer_id]
@@ -1220,12 +1226,14 @@ api.get('/client/:token', wrap(async (req, res) => {
       'SELECT id, name, role, phone, email, notes FROM team_contacts WHERE trainer_id=? ORDER BY position, id',
       [c.trainer_id]
     );
-    // Compagni di team: altri clienti dello stesso coach che hanno scelto di essere
-    // visibili. Solo nome e cognome (niente contatti), per riservatezza.
-    team = await db.q(
-      'SELECT first_name, last_name FROM customers WHERE trainer_id=? AND team_visible=1 AND id<>? ORDER BY first_name, last_name',
-      [c.trainer_id, c.id]
-    );
+    // Compagni di team: solo se il coach ha abilitato la sezione. Altri clienti
+    // dello stesso coach che hanno scelto di essere visibili (solo nome e cognome).
+    if (trainer && Number(trainer.team_enabled)) {
+      team = await db.q(
+        'SELECT first_name, last_name FROM customers WHERE trainer_id=? AND team_visible=1 AND id<>? ORDER BY first_name, last_name',
+        [c.trainer_id, c.id]
+      );
+    }
   }
   res.json({ customer: customerForClient(c), trainer, contacts, team });
 }));

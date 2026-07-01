@@ -773,6 +773,27 @@
         : el('button', { class: 'btn btn-primary', text: 'Attiva sotto la mia responsabilità', onClick: () => confirmNutritionOn() }),
       el('p', { class: 'muted', style: 'margin-top:10px; font-size:12px', text: 'La scelta vale per la tua console e per l’app di tutti i tuoi clienti.' }),
     ]));
+
+    // 👥 Team (compagni): abilita/disabilita la sezione compagni per i clienti.
+    c.appendChild(el('div', { class: 'section-title', style: 'margin-top:18px' }, [el('h4', { text: '👥 Team' })]));
+    const teamOn = isTrainer() && opts.trainer && Number(opts.trainer.team_enabled);
+    c.appendChild(el('div', { class: 'card' }, [
+      el('h3', { text: 'Sezione "Compagni di team"' }),
+      el('p', { class: 'muted', style: 'margin:6px 0; font-size:13px', text: 'Se attiva, ogni cliente può scegliere (dalle sue Impostazioni) di comparire agli altri tuoi clienti con nome e cognome. Se disattivata, la lista compagni non compare a nessuno.' }),
+      teamOn
+        ? el('button', { class: 'btn btn-danger', text: 'Disattiva sezione compagni', onClick: () => setTeamEnabled(0) })
+        : el('button', { class: 'btn btn-primary', text: 'Attiva sezione compagni', onClick: () => setTeamEnabled(1) }),
+      el('p', { class: 'muted', style: 'margin-top:10px; font-size:12px', text: teamOn ? 'Attualmente ATTIVA.' : 'Attualmente disattivata.' }),
+    ]));
+  }
+
+  async function setTeamEnabled(val) {
+    try {
+      const t = await API.updateMySettings({ team_enabled: val });
+      opts.trainer = Object.assign({}, opts.trainer, t);
+      toast(val ? 'Sezione compagni attivata' : 'Sezione compagni disattivata', 'ok');
+      navigate('settings');
+    } catch (err) { toast(err.message, 'err'); }
   }
 
   // ---- Esercizi (catalogo) ------------------------------------------------

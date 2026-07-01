@@ -282,16 +282,19 @@
   function viewTeam(b) {
     if (trainer) b.appendChild(trainerCard());
     const cc = contactsCard(); if (cc) b.appendChild(cc);
-    const card = el('div', { class: 'client-card' }, [el('h3', { text: '👥 Compagni di team' })]);
-    if (!teamMembers.length) {
-      card.appendChild(el('p', { class: 'muted', text: 'Nessun compagno visibile per ora. Puoi scegliere di comparire nel Team dalle Impostazioni.' }));
-    } else {
-      teamMembers.forEach((mm) => card.appendChild(el('div', { style: 'display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line)' }, [
-        el('span', { class: 'avatar', text: window.UI.initials(mm.first_name, mm.last_name) }),
-        el('div', { text: `${mm.first_name} ${mm.last_name}`, style: 'font-weight:600' }),
-      ])));
+    // La lista compagni compare solo se il coach ha abilitato la sezione.
+    if (trainer && Number(trainer.team_enabled)) {
+      const card = el('div', { class: 'client-card' }, [el('h3', { text: '👥 Compagni di team' })]);
+      if (!teamMembers.length) {
+        card.appendChild(el('p', { class: 'muted', text: 'Nessun compagno visibile per ora. Puoi scegliere di comparire nel Team dalle Impostazioni.' }));
+      } else {
+        teamMembers.forEach((mm) => card.appendChild(el('div', { style: 'display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line)' }, [
+          el('span', { class: 'avatar', text: window.UI.initials(mm.first_name, mm.last_name) }),
+          el('div', { text: `${mm.first_name} ${mm.last_name}`, style: 'font-weight:600' }),
+        ])));
+      }
+      b.appendChild(card);
     }
-    b.appendChild(card);
     b.appendChild(window.UI.copyrightLine());
   }
 
@@ -305,23 +308,25 @@
       el('h3', { text: '🌐 Lingua' }),
       el('div', { style: 'margin-top:8px' }, window.I18N.toggleEl()),
     ]));
-    // Visibilità nel Team (opt-in): il cliente sceglie se comparire agli altri.
-    const teamChk = el('input', { type: 'checkbox' });
-    teamChk.checked = !!Number(customer.team_visible);
-    teamChk.addEventListener('change', async () => {
-      try {
-        const r = await API.setTeamVisibility(teamChk.checked);
-        customer.team_visible = r.team_visible;
-        toast(Number(r.team_visible) ? 'Ora sei visibile nel Team' : 'Non sei più visibile nel Team', 'ok');
-      } catch (e) { teamChk.checked = !teamChk.checked; toast('Operazione non riuscita', 'err'); }
-    });
-    b.appendChild(el('div', { class: 'client-card' }, [
-      el('h3', { text: '👥 Team' }),
-      el('label', { style: 'display:flex; align-items:flex-start; gap:8px; margin-top:8px; cursor:pointer; font-size:14px' }, [
-        teamChk,
-        el('span', { text: 'Mostra il mio nome e cognome agli altri clienti del coach nella sezione Team.' }),
-      ]),
-    ]));
+    // Visibilità nel Team (opt-in): mostrata solo se il coach ha abilitato la sezione.
+    if (trainer && Number(trainer.team_enabled)) {
+      const teamChk = el('input', { type: 'checkbox' });
+      teamChk.checked = !!Number(customer.team_visible);
+      teamChk.addEventListener('change', async () => {
+        try {
+          const r = await API.setTeamVisibility(teamChk.checked);
+          customer.team_visible = r.team_visible;
+          toast(Number(r.team_visible) ? 'Ora sei visibile nel Team' : 'Non sei più visibile nel Team', 'ok');
+        } catch (e) { teamChk.checked = !teamChk.checked; toast('Operazione non riuscita', 'err'); }
+      });
+      b.appendChild(el('div', { class: 'client-card' }, [
+        el('h3', { text: '👥 Team' }),
+        el('label', { style: 'display:flex; align-items:flex-start; gap:8px; margin-top:8px; cursor:pointer; font-size:14px' }, [
+          teamChk,
+          el('span', { text: 'Mostra il mio nome e cognome agli altri clienti del coach nella sezione Team.' }),
+        ]),
+      ]));
+    }
     b.appendChild(pushCard());
     b.appendChild(privacyDataCard());
     b.appendChild(window.UI.copyrightLine());

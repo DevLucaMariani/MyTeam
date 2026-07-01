@@ -74,6 +74,9 @@ ALTER TABLE trainers ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP NULL DEFAULT N
 -- discrezione/responsabilita' (in Italia la dieta e' riservata a professionisti
 -- abilitati). Se 0, la sezione e' nascosta sia al coach sia ai suoi clienti.
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS nutrition_enabled TINYINT(1) NOT NULL DEFAULT 0;
+-- Sezione "Compagni di team": abilitata dal coach. Se 0, i clienti non possono
+-- rendersi visibili e la lista compagni non compare.
+ALTER TABLE trainers ADD COLUMN IF NOT EXISTS team_enabled TINYINT(1) NOT NULL DEFAULT 0;
 -- White-label esteso: nome dello studio/brand e messaggio di benvenuto mostrati
 -- ai clienti del coach (oltre a logo e tema gia' presenti).
 ALTER TABLE trainers ADD COLUMN IF NOT EXISTS brand_name VARCHAR(80);
