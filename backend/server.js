@@ -378,10 +378,11 @@ api.delete('/payments/:id', requireStaff, wrap(async (req, res) => {
 }));
 
 const CUSTOMER_FIELDS = [
-  'first_name', 'last_name', 'email', 'phone', 'birth_date', 'birth_place', 'gender',
+  'first_name', 'last_name', 'email', 'phone', 'birth_date', 'birth_place', 'gender', 'codice_fiscale',
   'address', 'address_cap', 'address_city', 'address_province', 'address_country',
   'height_cm', 'weight_kg', 'fat_mass_pct', 'lean_mass_kg', 'waist_cm',
   'goal', 'subscription', 'subscription_expiry',
+  'payment_method', 'subscription_type', 'subscription_cadence', 'subscription_cost',
   'fee_amount', 'paid', 'paid_date', 'notes',
 ];
 

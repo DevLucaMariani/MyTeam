@@ -996,7 +996,11 @@
   }
 
   function openCustomerForm(existing) {
+    const payMethods = ['', 'Contanti', 'Bonifico', 'Carta', 'PayPal/Satispay', 'Altro'].map((v) => ({ value: v, label: v || '—' }));
+    const cadences = ['', 'Mensile', 'Trimestrale', 'Semestrale', 'Annuale', 'Una tantum'].map((v) => ({ value: v, label: v || '—' }));
     const f = el('div', {}, [
+      // ① Generalità
+      el('div', { class: 'section-title' }, [el('h4', { text: '① Generalità' })]),
       el('div', { class: 'grid-2' }, [
         field('Nome', 'first_name', existing && existing.first_name),
         field('Cognome', 'last_name', existing && existing.last_name),
@@ -1011,8 +1015,10 @@
         field('Sesso', 'gender', existing && existing.gender, 'select', { options: [
           { value: '', label: '—' }, { value: 'M', label: 'M' }, { value: 'F', label: 'F' }, { value: 'Altro', label: 'Altro' }] }),
       ]),
+      field('Codice fiscale', 'codice_fiscale', existing && existing.codice_fiscale),
       addressField(existing),
-      el('div', { class: 'section-title' }, [el('h4', { text: 'Misure e composizione corporea' })]),
+      // ② Dati fisici
+      el('div', { class: 'section-title' }, [el('h4', { text: '② Dati fisici' })]),
       el('div', { class: 'grid-3' }, [
         field('Altezza (cm)', 'height_cm', existing && existing.height_cm, 'number'),
         field('Peso (kg)', 'weight_kg', existing && existing.weight_kg, 'number', { step: '0.1' }),
@@ -1024,6 +1030,18 @@
       ]),
       field('Obiettivo', 'goal', existing && existing.goal),
       field('Note', 'notes', existing && existing.notes, 'textarea'),
+      // ③ Abbonamento
+      el('div', { class: 'section-title' }, [el('h4', { text: '③ Abbonamento' })]),
+      el('div', { class: 'grid-2' }, [
+        field('Tipologia abbonamento', 'subscription_type', existing && existing.subscription_type),
+        field('Metodo di pagamento', 'payment_method', existing && existing.payment_method, 'select', { options: payMethods }),
+      ]),
+      el('div', { class: 'grid-3' }, [
+        field('Costo (€)', 'subscription_cost', existing && existing.subscription_cost, 'number', { step: '0.01' }),
+        field('Cadenza', 'subscription_cadence', existing && existing.subscription_cadence, 'select', { options: cadences }),
+        field('Scadenza', 'subscription_expiry', existing && (existing.subscription_expiry || '').slice(0, 10), 'date'),
+      ]),
+      el('p', { class: 'muted', style: 'font-size:12px', text: 'Le singole spese (voci) si gestiscono nella sezione Abbonamento del cliente, sotto "Pagamenti".' }),
     ]);
     const m = modal({
       title: existing ? 'Modifica cliente' : 'Nuovo cliente',
@@ -1193,7 +1211,6 @@
         el('button', { class: 'btn btn-primary', html: '+ Nuova scheda', onClick: () => openPlanEditor(null, cu.id) }),
       ]));
 
-      // Anagrafica
       const bmi = (cu.weight_kg && cu.height_cm)
         ? (Number(cu.weight_kg) / Math.pow(Number(cu.height_cm) / 100, 2)) : null;
       const fullAddr = [
@@ -1201,12 +1218,23 @@
         [cu.address_cap, cu.address_city].filter(Boolean).join(' '),
         cu.address_province, cu.address_country,
       ].filter(Boolean).join(', ');
-      const info = el('div', { class: 'card' }, [
-        el('h3', { text: 'Anagrafica' }),
+
+      // ① Generalità
+      c.appendChild(el('div', { class: 'card' }, [
+        el('h3', { text: '① Generalità' }),
         el('div', { class: 'grid-3' }, [
           infoLine('Email', cu.email), infoLine('Telefono', cu.phone),
           infoLine('Nascita', cu.birth_date ? (fmtDate(cu.birth_date) + (cu.birth_place ? ' · ' + cu.birth_place : '')) : (cu.birth_place || null)),
           infoLine('Sesso', cu.gender),
+          infoLine('Codice fiscale', cu.codice_fiscale),
+        ]),
+        fullAddr ? infoLine('Indirizzo', fullAddr) : null,
+      ]));
+
+      // ② Dati fisici
+      c.appendChild(el('div', { class: 'card' }, [
+        el('h3', { text: '② Dati fisici' }),
+        el('div', { class: 'grid-3' }, [
           infoLine('Altezza', cu.height_cm ? cu.height_cm + ' cm' : null),
           infoLine('Peso', cu.weight_kg ? cu.weight_kg + ' kg' : null),
           infoLine('BMI', bmi ? bmi.toFixed(1) : null),
@@ -1215,12 +1243,20 @@
           infoLine('Circonf. vita', cu.waist_cm ? cu.waist_cm + ' cm' : null),
           infoLine('Obiettivo', cu.goal),
         ]),
-        fullAddr ? infoLine('Indirizzo', fullAddr) : null,
         cu.notes ? el('p', { class: 'muted', text: cu.notes, style: 'margin-top:8px' }) : null,
-      ]);
-      c.appendChild(info);
+      ]));
 
-      // Pagamenti (registro voci: abbonamento, schede, prestazioni extra…)
+      // ③ Abbonamento (config + registro voci di pagamento)
+      c.appendChild(el('div', { class: 'card' }, [
+        el('h3', { text: '③ Abbonamento' }),
+        el('div', { class: 'grid-3' }, [
+          infoLine('Tipologia', cu.subscription_type),
+          infoLine('Metodo pagamento', cu.payment_method),
+          infoLine('Costo', fmtEuro(cu.subscription_cost)),
+          infoLine('Cadenza', cu.subscription_cadence),
+          infoLine('Scadenza', cu.subscription_expiry ? fmtDate(cu.subscription_expiry) : null),
+        ]),
+      ]));
       c.appendChild(await paymentsCard(cu.id));
 
       // Link personale del cliente (PWA) + invio rapido via WhatsApp.
@@ -1588,6 +1624,12 @@
           el('input', { value: d.name, onInput: (e) => { d.name = e.target.value; }, onChange: () => redraw() }),
           el('button', { class: 'btn btn-sm', html: '+ Esercizio', onClick: () => { d.exercises.push(defaultExercise()); redraw(); } }),
           exClipboard ? el('button', { class: 'btn btn-sm btn-accent', html: '⧉ Incolla esercizio', title: 'Incolla l\'esercizio copiato in questo giorno', onClick: () => { const c = JSON.parse(JSON.stringify(exClipboard)); ensureScheme(c); d.exercises.push(c); redraw(); } }) : null,
+          el('button', { class: 'btn btn-sm', html: '⧉ Duplica giorno', title: 'Crea una copia di questo giorno', onClick: () => {
+            const copy = JSON.parse(JSON.stringify(d));
+            copy.name = (d.name || 'Giorno') + ' (copia)';
+            plan.days.splice(di + 1, 0, copy);
+            editDay = di + 1; redraw();
+          } }),
           el('button', { class: 'btn btn-sm btn-danger', text: 'Elimina giorno', onClick: () => { plan.days.splice(di, 1); redraw(); } }),
         ]),
         el('div', { style: 'padding:12px' }, exWrap),

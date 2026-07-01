@@ -426,20 +426,24 @@
         const inten = window.UI.repsForWeek(ex.intensity_scheme, curWeek);
         const hasIntensity = inten.some((v) => v != null && v !== '');
 
-        // Intestazione esercizio: nome + meta + nota (generale dell'esercizio)
-        host.appendChild(el('div', { class: 'ex-head' }, [
-          el('div', { style: 'display:flex; align-items:center; gap:10px' }, [
-            el('div', { class: 'name', text: ex.name, style: 'flex:1' }),
-            window.UI.exerciseMedia(ex.media_url),
-          ]),
+        // Corpo/dettaglio dell'esercizio: nascosto finché non si espande.
+        const detail = el('div', { class: 'ex-detail', style: 'display:none; margin-top:6px' });
+        [
           Number(ex.unilateral) ? el('div', { class: 'meta', html: '↔️ <strong>Monolaterale</strong> — esegui le serie su un lato, poi ripeti sull\'altro' }) : null,
+          ex.media_url ? el('div', { style: 'margin:4px 0' }, window.UI.exerciseMedia(ex.media_url)) : null,
           (ex.suggested_weight || ex.rest)
             ? el('div', { class: 'meta', text: (ex.suggested_weight ? 'peso sugg. ' + ex.suggested_weight : '') + (ex.rest ? ' · rec ' + ex.rest : '') })
             : null,
           ex.notes ? el('div', { class: 'meta', text: '📝 ' + ex.notes }) : null,
-        ]));
+        ].filter(Boolean).forEach((n) => detail.appendChild(n));
 
         // Tabella: una riga per serie -> ripetizioni, peso, fatto
+        const doneBadge = el('span', { style: 'font-size:12px; font-weight:800' });
+        const updateDoneBadge = () => {
+          const on = detail.querySelectorAll('.check.on').length;
+          doneBadge.textContent = on + '/' + ex.num_series;
+          doneBadge.style.color = (ex.num_series && on >= ex.num_series) ? 'var(--indigo)' : 'var(--ink-3)';
+        };
         const tbody = el('tbody', {});
         for (let s = 1; s <= ex.num_series; s += 1) {
           const lg = byKey[`${ex.id}_${s}`] || {};
@@ -455,9 +459,9 @@
           // Inserire un peso equivale a dichiarare la serie svolta: spunta in automatico.
           wInput.addEventListener('change', () => {
             if (wInput.value.trim() && !check.classList.contains('on')) check.classList.add('on');
-            save(check.classList.contains('on'));
+            save(check.classList.contains('on')); updateDoneBadge();
           });
-          check.addEventListener('click', () => { check.classList.toggle('on'); save(check.classList.contains('on')); });
+          check.addEventListener('click', () => { check.classList.toggle('on'); save(check.classList.contains('on')); updateDoneBadge(); });
 
           tbody.appendChild(el('tr', { class: 'serie-row' }, [
             el('td', { class: 'serie-n', text: 'Serie ' + s }),
@@ -467,7 +471,7 @@
             el('td', { class: 'serie-c' }, check),
           ]));
         }
-        host.appendChild(el('table', { class: 'serie-table' }, [
+        detail.appendChild(el('table', { class: 'serie-table' }, [
           el('thead', {}, el('tr', {}, [
             el('th', { text: 'Serie' }), el('th', { text: 'Rip.' }),
             hasIntensity ? el('th', { text: 'Int.' }) : null,
@@ -475,7 +479,26 @@
           ])),
           tbody,
         ]));
-        host.appendChild(el('button', { class: 'btn btn-sm rest-btn', html: '⏱ Recupero', onClick: () => startRest(parseRest(ex.rest)) }));
+        detail.appendChild(el('button', { class: 'btn btn-sm rest-btn', html: '⏱ Recupero', onClick: () => startRest(parseRest(ex.rest)) }));
+
+        // Intestazione compatta cliccabile: nome + riepilogo + completamento + freccia.
+        const repsSummary = reps.filter((v) => v != null && v !== '').join('/');
+        const chevron = el('span', { text: '▸', style: 'font-size:13px; color:var(--ink-3)' });
+        const header = el('div', { class: 'ex-toggle', style: 'display:flex; align-items:center; gap:10px; cursor:pointer; padding:10px 0; border-top:1px solid var(--line)' }, [
+          el('div', { style: 'flex:1' }, [
+            el('div', { class: 'name', text: ex.name, style: 'font-weight:700' }),
+            el('div', { class: 'muted', text: ex.num_series + ' serie' + (repsSummary ? ' · ' + repsSummary + ' rip.' : ''), style: 'font-size:12px' }),
+          ]),
+          Number(ex.unilateral) ? el('span', { text: '↔️', title: 'Monolaterale' }) : null,
+          doneBadge, chevron,
+        ]);
+        header.addEventListener('click', () => {
+          const open = detail.style.display !== 'none';
+          detail.style.display = open ? 'none' : 'block';
+          chevron.textContent = open ? '▸' : '▾';
+        });
+        updateDoneBadge();
+        host.appendChild(el('div', {}, [header, detail]));
       });
       b.appendChild(card);
     });

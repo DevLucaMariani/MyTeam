@@ -107,6 +107,12 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_country VARCHAR(120);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS fat_mass_pct DECIMAL(5,2);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS lean_mass_kg DECIMAL(5,1);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS waist_cm DECIMAL(5,1);
+-- Generalità: codice fiscale. Abbonamento: metodo, tipologia, cadenza, costo.
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS codice_fiscale VARCHAR(16);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_method VARCHAR(40);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS subscription_type VARCHAR(80);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS subscription_cadence VARCHAR(30);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS subscription_cost DECIMAL(10,2);
 
 CREATE TABLE IF NOT EXISTS plans (
   id             INT AUTO_INCREMENT PRIMARY KEY,
