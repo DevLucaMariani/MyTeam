@@ -13,6 +13,7 @@
     { value: 'fondamentale', label: 'Fondamentale', color: '#e11d48' },
     { value: 'complementare', label: 'Complementare', color: '#0ea5e9' },
     { value: 'monoarticolare', label: 'Monoarticolare', color: '#059669' },
+    { value: 'monolaterale', label: 'Monolaterale', color: '#db2777' },
     { value: 'superset', label: 'Superset', color: '#d97706' },
     { value: 'cardio', label: 'Cardio', color: '#7c3aed' },
     { value: 'altro', label: 'Altro', color: '#64748b' },
@@ -1235,21 +1236,42 @@
         cu.address_province, cu.address_country,
       ].filter(Boolean).join(', ');
 
-      // ① Generalità
-      c.appendChild(el('div', { class: 'card' }, [
-        el('h3', { text: '① Generalità' }),
+      // Sezioni collassabili con colori tenui: si riducono al titolo cliccandoci sopra.
+      const section = (title, color, bodyNodes) => {
+        const inner = el('div', { style: 'margin-top:10px' }, bodyNodes.filter(Boolean));
+        const chev = el('span', { text: '▾', style: 'color:var(--ink-3)' });
+        const head = el('div', {
+          style: 'display:flex; align-items:center; justify-content:space-between; cursor:pointer',
+          onClick: () => {
+            const open = inner.style.display !== 'none';
+            inner.style.display = open ? 'none' : 'block';
+            chev.textContent = open ? '▸' : '▾';
+          },
+        }, [el('h3', { text: title, style: 'margin:0; color:' + color }), chev]);
+        return el('div', { class: 'card', style: 'border-left:4px solid ' + color + '; background:' + color + '12' }, [head, inner]);
+      };
+
+      c.appendChild(section('Generalità', '#4f46e5', [
         el('div', { class: 'grid-3' }, [
           infoLine('Email', cu.email), infoLine('Telefono', cu.phone),
           infoLine('Nascita', cu.birth_date ? (fmtDate(cu.birth_date) + (cu.birth_place ? ' · ' + cu.birth_place : '')) : (cu.birth_place || null)),
           infoLine('Sesso', cu.gender),
           infoLine('Codice fiscale', cu.codice_fiscale),
         ]),
-        fullAddr ? infoLine('Indirizzo', fullAddr) : null,
       ]));
 
-      // ② Dati fisici
-      c.appendChild(el('div', { class: 'card' }, [
-        el('h3', { text: '② Dati fisici' }),
+      c.appendChild(section('Indirizzo', '#0ea5e9', [
+        el('div', { class: 'grid-3' }, [
+          infoLine('Via e civico', cu.address),
+          infoLine('CAP', cu.address_cap),
+          infoLine('Città', cu.address_city),
+          infoLine('Provincia', cu.address_province),
+          infoLine('Paese', cu.address_country),
+        ]),
+        fullAddr ? el('p', { class: 'muted', text: fullAddr, style: 'margin-top:6px; font-size:13px' }) : null,
+      ]));
+
+      c.appendChild(section('Dati fisici', '#059669', [
         el('div', { class: 'grid-3' }, [
           infoLine('Altezza', cu.height_cm ? cu.height_cm + ' cm' : null),
           infoLine('Peso', cu.weight_kg ? cu.weight_kg + ' kg' : null),
@@ -1262,9 +1284,8 @@
         cu.notes ? el('p', { class: 'muted', text: cu.notes, style: 'margin-top:8px' }) : null,
       ]));
 
-      // ③ Abbonamento (config + registro voci di pagamento)
-      c.appendChild(el('div', { class: 'card' }, [
-        el('h3', { text: '③ Abbonamento' }),
+      const payCard = await paymentsCard(cu.id);
+      c.appendChild(section('Abbonamento', '#d97706', [
         el('div', { class: 'grid-3' }, [
           infoLine('Tipologia', cu.subscription_type),
           infoLine('Metodo pagamento', cu.payment_method),
@@ -1272,8 +1293,8 @@
           infoLine('Cadenza', cu.subscription_cadence),
           infoLine('Scadenza', cu.subscription_expiry ? fmtDate(cu.subscription_expiry) : null),
         ]),
+        payCard,
       ]));
-      c.appendChild(await paymentsCard(cu.id));
 
       // Link personale del cliente (PWA) + invio rapido via WhatsApp.
       const linkCard = clientLinkCard(cu);
@@ -1663,6 +1684,19 @@
       }
     }
 
+    // Porta in vista (e mette a fuoco) l'ultimo esercizio del giorno corrente,
+    // usato dopo "+ Esercizio" per andare subito a compilarlo.
+    function scrollToLastExercise() {
+      requestAnimationFrame(() => {
+        const cards = body.querySelectorAll('.ex-card');
+        const last = cards[cards.length - 1];
+        if (!last) return;
+        last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const inp = last.querySelector('input');
+        if (inp) inp.focus({ preventScroll: true });
+      });
+    }
+
     function dayBlock(d, di) {
       const exWrap = el('div', {});
       d.exercises.forEach((ex, ei) => exWrap.appendChild(exerciseBlock(d, ex, ei)));
@@ -1670,8 +1704,8 @@
       return el('div', { class: 'day-block' }, [
         el('div', { class: 'day-head' }, [
           el('input', { value: d.name, onInput: (e) => { d.name = e.target.value; }, onChange: () => redraw() }),
-          el('button', { class: 'btn btn-sm', html: '+ Esercizio', onClick: () => { d.exercises.push(defaultExercise()); redraw(); } }),
-          exClipboard ? el('button', { class: 'btn btn-sm btn-accent', html: '⧉ Incolla esercizio', title: 'Incolla l\'esercizio copiato in questo giorno', onClick: () => { const c = JSON.parse(JSON.stringify(exClipboard)); ensureScheme(c); d.exercises.push(c); redraw(); } }) : null,
+          el('button', { class: 'btn btn-sm', html: '+ Esercizio', onClick: () => { d.exercises.push(defaultExercise()); redraw(); scrollToLastExercise(); } }),
+          exClipboard ? el('button', { class: 'btn btn-sm btn-accent', html: '⧉ Incolla esercizio', title: 'Incolla l\'esercizio copiato in questo giorno', onClick: () => { const c = JSON.parse(JSON.stringify(exClipboard)); ensureScheme(c); d.exercises.push(c); redraw(); scrollToLastExercise(); } }) : null,
           el('button', { class: 'btn btn-sm', html: '⧉ Duplica giorno', title: 'Crea una copia di questo giorno', onClick: () => {
             const copy = JSON.parse(JSON.stringify(d));
             copy.name = (d.name || 'Giorno') + ' (copia)';
@@ -1718,7 +1752,14 @@
         if ((ex.ex_type || '') === t.value) o.selected = true;
         return o;
       }));
-      typeSel.addEventListener('change', (e) => { ex.ex_type = e.target.value; redraw(); });
+      typeSel.addEventListener('change', (e) => {
+        ex.ex_type = e.target.value;
+        // "Monolaterale" è ora una tipologia: imposta il flag unilaterale.
+        ex.unilateral = ex.ex_type === 'monolaterale' ? 1 : 0;
+        // Il codice superset ha senso solo per gli esercizi di tipo Superset.
+        if (ex.ex_type !== 'superset') ex.superset_group = '';
+        redraw();
+      });
 
       // Tabella serie: colonne in base alla tipologia (fondamentale = 4 colonne).
       const isFond = (ex.ex_type === 'fondamentale');
@@ -1746,39 +1787,43 @@
         el('tbody', {}, rows),
       ]);
 
-      const ssSel = el('select', {}, [['', '—'], ['A', 'A'], ['B', 'B'], ['C', 'C'], ['D', 'D'], ['E', 'E']].map(([v, l]) => {
-        const o = el('option', { value: v, text: l });
-        if ((ex.superset_group || '') === v) o.selected = true;
-        return o;
+      // Superset: 5 pulsanti-lettera colorati. Stessa lettera = esercizi in superset.
+      const SS_LETTERS = [['A', '#e11d48'], ['B', '#0ea5e9'], ['C', '#059669'], ['D', '#d97706'], ['E', '#7c3aed']];
+      const ssButtons = el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap' }, SS_LETTERS.map(([L, col]) => {
+        const active = (ex.superset_group || '') === L;
+        const btn = el('button', {
+          text: L,
+          style: 'width:42px; height:38px; font-weight:800; font-size:15px; border-radius:9px; cursor:pointer; border:2px solid ' + col
+            + '; background:' + (active ? col : 'transparent') + '; color:' + (active ? '#fff' : col),
+        });
+        btn.addEventListener('click', () => { ex.superset_group = active ? '' : L; redraw(); });
+        return btn;
       }));
-      ssSel.addEventListener('change', (e) => { ex.superset_group = e.target.value; redraw(); });
 
-      // Toggle Monolaterale (sostituisce il vecchio check sotto).
-      const uniBtn = el('button', {
-        class: 'btn btn-sm' + (Number(ex.unilateral) ? ' btn-primary' : ''),
-        html: (Number(ex.unilateral) ? '✓ ' : '') + '↔️ Monolaterale',
-        title: 'Esecuzione un lato alla volta — attiva/disattiva',
-        style: 'flex:0 0 auto',
-        onClick: () => { ex.unilateral = Number(ex.unilateral) ? 0 : 1; redraw(); },
-      });
       const copyBtn = el('button', { class: 'btn btn-sm', html: '⧉ Copia', title: 'Copia questo esercizio',
         onClick: () => { exClipboard = JSON.parse(JSON.stringify(ex)); toast('Esercizio copiato — usa "Incolla esercizio" nel giorno', 'ok'); redraw(); } });
       const delBtn = el('button', { class: 'btn btn-sm btn-danger', text: '🗑 Elimina', title: 'Rimuovi esercizio',
         onClick: () => { d.exercises.splice(ei, 1); redraw(); } });
 
       const tcolor = exType(ex.ex_type).color;
-      return el('div', { class: 'card', style: 'margin-bottom:12px; padding:14px' + (tcolor ? '; border-left:4px solid ' + tcolor : '') }, [
+      return el('div', { class: 'ex-card', style: 'margin-bottom:16px; padding:14px; border:1px solid var(--line); border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.06)' + (tcolor ? '; border-left:5px solid ' + tcolor : '') }, [
+        // Intestazione: numero esercizio (separazione più evidente tra gli esercizi).
+        el('div', { style: 'display:flex; align-items:center; gap:8px; margin-bottom:8px' }, [
+          el('span', { text: 'Esercizio ' + (ei + 1), style: 'font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:' + (tcolor || 'var(--ink-3)') }),
+          ex.superset_group ? el('span', { class: 'badge badge-attiva', text: '🔗 Superset ' + ex.superset_group }) : null,
+          el('span', { style: 'flex:1' }),
+          copyBtn, delBtn,
+        ]),
         el('div', { style: 'display:flex; gap:8px; align-items:center; flex-wrap:wrap' }, [
           el('div', { style: 'flex:1 1 240px; min-width:180px' }, nameInp),
-          ex.ex_type ? el('span', { class: 'badge', style: 'background:' + tcolor + '22; color:' + tcolor + '; align-self:center', text: exType(ex.ex_type).label }) : null,
-          ex.superset_group ? el('span', { class: 'badge badge-attiva', text: '🔗 Superset ' + ex.superset_group, style: 'align-self:center' }) : null,
-          uniBtn, pickBtn, copyBtn, delBtn,
+          pickBtn,
         ]),
         el('div', { class: 'grid-3', style: 'margin-top:10px' }, [
           labeled('Tipologia', typeSel), labeled('N. serie', seriesInp), labeled('Recupero', restInp),
         ]),
         labeled('Peso suggerito', weightInp),
-        labeled('Superset (stesso codice = esercizi eseguiti insieme)', ssSel),
+        // La scelta del gruppo superset appare solo per la tipologia "Superset".
+        (ex.ex_type === 'superset') ? labeled('Superset — stessa lettera = esercizi eseguiti insieme', ssButtons) : null,
         labeled('Nota', noteInp),
         seriesTable,
       ]);

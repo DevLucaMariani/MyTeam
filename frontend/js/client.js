@@ -4,8 +4,8 @@
   const { el, clear, toast, modal, confirmDialog, fmtDate } = window.UI;
 
   // Colori/etichette tipologia esercizio (allineati al pannello coach).
-  const EX_TYPE_COLORS = { fondamentale: '#e11d48', complementare: '#0ea5e9', monoarticolare: '#059669', superset: '#d97706', cardio: '#7c3aed', altro: '#64748b' };
-  const EX_TYPE_LABELS = { fondamentale: 'Fondamentale', complementare: 'Complementare', monoarticolare: 'Monoarticolare', superset: 'Superset', cardio: 'Cardio', altro: 'Altro' };
+  const EX_TYPE_COLORS = { fondamentale: '#e11d48', complementare: '#0ea5e9', monoarticolare: '#059669', monolaterale: '#db2777', superset: '#d97706', cardio: '#7c3aed', altro: '#64748b' };
+  const EX_TYPE_LABELS = { fondamentale: 'Fondamentale', complementare: 'Complementare', monoarticolare: 'Monoarticolare', monolaterale: 'Monolaterale', superset: 'Superset', cardio: 'Cardio', altro: 'Altro' };
 
   let root;
   let customer = null;
@@ -177,7 +177,7 @@
     wrap.appendChild(bottomNav());
     root.appendChild(wrap);
 
-    const tabs = { home: viewHome, scheda: viewScheda, nutrizione: viewNutrizione, progressi: viewProgressi };
+    const tabs = { home: viewHome, scheda: viewScheda, nutrizione: viewNutrizione, progressi: viewProgressi, impostazioni: viewImpostazioni };
     (tabs[tab] || viewHome)(body);
   }
 
@@ -214,6 +214,7 @@
       { id: 'scheda', ico: '🏋️', label: 'Scheda' },
       nutritionOn() ? { id: 'nutrizione', ico: '🥗', label: 'Nutrizione' } : null,
       { id: 'progressi', ico: '📈', label: 'Progressi' },
+      { id: 'impostazioni', ico: '⚙️', label: 'Impostazioni' },
     ].filter(Boolean);
     return el('nav', { class: 'bottom-nav', style: `grid-template-columns: repeat(${items.length}, 1fr)` }, items.map((it) => el('button', {
       class: tab === it.id ? 'active' : '', onClick: () => { tab = it.id; render(); },
@@ -236,11 +237,9 @@
     }
     if (!plan) {
       b.appendChild(noPlan());
-      b.appendChild(pushCard());
       const st = storicoCard(); if (st) b.appendChild(st);
       if (trainer) b.appendChild(trainerCard());
       const cc = contactsCard(); if (cc) b.appendChild(cc);
-      b.appendChild(privacyDataCard());
       b.appendChild(window.UI.copyrightLine());
       return;
     }
@@ -274,9 +273,20 @@
       el('p', { class: 'muted', text: 'Invia l\'aggiornamento settimanale e carica le foto.' }),
     ]));
 
-    b.appendChild(pushCard());
     const st = storicoCard(); if (st) b.appendChild(st);
     if (trainer) b.appendChild(trainerCard());
+    const cc = contactsCard(); if (cc) b.appendChild(cc);
+    b.appendChild(window.UI.copyrightLine());
+  }
+
+  // ---- Impostazioni cliente (notifiche + privacy/dati) --------------------
+  function viewImpostazioni(b) {
+    b.appendChild(el('div', { class: 'client-card' }, [
+      el('h3', { text: 'Impostazioni' }),
+      el('p', { class: 'muted', text: 'Attiva le notifiche e gestisci i tuoi dati personali.' }),
+    ]));
+    b.appendChild(pushCard());
+    b.appendChild(privacyDataCard());
     b.appendChild(window.UI.copyrightLine());
   }
 
@@ -522,18 +532,36 @@
 
   function sendWeekly() {
     const note = el('textarea', { placeholder: 'Come è andata la settimana? (facoltativo)' });
+    const fileInput = el('input', { type: 'file', accept: 'image/*', multiple: true });
+    const previews = el('div', { style: 'display:flex; gap:6px; flex-wrap:wrap; margin-top:8px' });
+    const photos = []; // data URL compressi da inviare come foto di monitoraggio
+    fileInput.addEventListener('change', () => {
+      Array.from(fileInput.files).forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = () => compress(reader.result, (out) => {
+          photos.push(out);
+          previews.appendChild(el('img', { src: out, style: 'width:54px; height:54px; object-fit:cover; border-radius:8px' }));
+        });
+        reader.readAsDataURL(file);
+      });
+    });
     const m = modal({
       title: 'Aggiornamento settimana ' + curWeek,
       body: el('div', {}, [
         el('p', { class: 'muted', text: 'Invii all\'istruttore esercizi svolti, pesi usati e percentuale di completamento.' }),
         el('div', { class: 'field' }, [el('label', { text: 'Nota' }), note]),
+        el('div', { class: 'field' }, [el('label', { text: 'Foto (facoltative)' }), fileInput, previews]),
       ]),
       footer: [
         el('button', { class: 'btn', text: 'Annulla', onClick: () => m.close() }),
         el('button', { class: 'btn btn-primary', text: 'Invia', onClick: async () => {
           try {
+            for (const p of photos) {
+              await API.addPhoto(plan.id, { photo_type: 'libera', image_data: p });
+            }
             const r = await API.sendWeeklyUpdate(plan.id, { week: curWeek, note: note.value });
-            m.close(); toast(`Inviato! Completamento ${r.percent_complete}%`, 'ok');
+            m.close();
+            toast(`Inviato! Completamento ${r.percent_complete}%` + (photos.length ? ` · ${photos.length} foto` : ''), 'ok');
           } catch (err) { toast(err.message, 'err'); }
         } }),
       ],
