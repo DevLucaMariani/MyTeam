@@ -19,6 +19,8 @@
     { value: 'altro', label: 'Altro', color: '#64748b' },
   ];
   const exType = (v) => EX_TYPES.find((t) => t.value === (v || '')) || EX_TYPES[0];
+  // Modalità/attrezzi per gli esercizi Cardio.
+  const CARDIO_MODES = ['Camminata', 'Camminata in salita', 'Corsa', 'Cyclette', 'Tapis roulant', 'Ellittica', 'Vogatore', 'Nuoto', 'Salto della corda', 'Step', 'Altro'];
 
   function mount(container, options) {
     root = container;
@@ -1430,7 +1432,7 @@
 
     function defaultExercise() {
       return { name: '', num_series: 3, suggested_weight: '', rest: '', notes: '', superset_group: '', unilateral: 0,
-        ex_type: '',
+        ex_type: '', cardio_mode: '', cardio_duration: '', cardio_intensity: '',
         reps_scheme: { default: ['', '', ''], overrides: {} },
         intensity_scheme: { default: ['', '', ''], overrides: {} },
         deload_scheme: { default: ['', '', ''], overrides: {} },
@@ -1773,6 +1775,8 @@
         ex.unilateral = ex.ex_type === 'monolaterale' ? 1 : 0;
         // Il codice superset ha senso solo per gli esercizi di tipo Superset.
         if (ex.ex_type !== 'superset') ex.superset_group = '';
+        // Cardio: niente serie multiple, conta come 1 unità.
+        if (ex.ex_type === 'cardio') ex.num_series = 1;
         redraw();
       });
 
@@ -1820,6 +1824,37 @@
       const delBtn = el('button', { class: 'btn btn-sm btn-danger', text: '🗑 Elimina', title: 'Rimuovi esercizio',
         onClick: () => { d.exercises.splice(ei, 1); redraw(); } });
 
+      // Cardio: niente serie/peso — si scelgono modalità/attrezzo, tempo, intensità.
+      const isCardio = ex.ex_type === 'cardio';
+      const cardioModeSel = el('select', {}, [{ value: '', label: '—' }].concat(CARDIO_MODES.map((mm) => ({ value: mm, label: mm }))).map((o) => {
+        const opt = el('option', { value: o.value, text: o.label });
+        if ((ex.cardio_mode || '') === o.value) opt.selected = true;
+        return opt;
+      }));
+      cardioModeSel.addEventListener('change', (e) => { ex.cardio_mode = e.target.value; });
+      const cardioTimeInp = el('input', { value: ex.cardio_duration || '', placeholder: 'es. 30 min', onInput: (e) => { ex.cardio_duration = e.target.value; } });
+      const cardioIntInp = el('input', { value: ex.cardio_intensity || '', placeholder: 'es. moderata / FC 130-150 / RPE 6', onInput: (e) => { ex.cardio_intensity = e.target.value; } });
+
+      const bodyBlock = isCardio
+        ? el('div', {}, [
+          el('div', { class: 'grid-3', style: 'margin-top:10px' }, [
+            labeled('Tipologia', typeSel), labeled('Modalità / attrezzo', cardioModeSel), labeled('Tempo', cardioTimeInp),
+          ]),
+          el('div', { class: 'grid-2' }, [
+            labeled('Intensità (facoltativa)', cardioIntInp), labeled('Recupero (facoltativo)', restInp),
+          ]),
+          labeled('Nota', noteInp),
+        ])
+        : el('div', {}, [
+          el('div', { class: 'grid-3', style: 'margin-top:10px' }, [
+            labeled('Tipologia', typeSel), labeled('N. serie', seriesInp), labeled('Recupero', restInp),
+          ]),
+          labeled('Peso suggerito', weightInp),
+          (ex.ex_type === 'superset') ? labeled('Superset — stessa lettera = esercizi eseguiti insieme', ssButtons) : null,
+          labeled('Nota', noteInp),
+          seriesTable,
+        ]);
+
       const tcolor = exType(ex.ex_type).color;
       return el('div', { class: 'ex-card', style: 'margin-bottom:16px; padding:14px; border:1px solid var(--line); border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.06)' + (tcolor ? '; border-left:5px solid ' + tcolor : '') }, [
         // Intestazione: numero esercizio (separazione più evidente tra gli esercizi).
@@ -1833,14 +1868,7 @@
           el('div', { style: 'flex:1 1 240px; min-width:180px' }, nameInp),
           pickBtn,
         ]),
-        el('div', { class: 'grid-3', style: 'margin-top:10px' }, [
-          labeled('Tipologia', typeSel), labeled('N. serie', seriesInp), labeled('Recupero', restInp),
-        ]),
-        labeled('Peso suggerito', weightInp),
-        // La scelta del gruppo superset appare solo per la tipologia "Superset".
-        (ex.ex_type === 'superset') ? labeled('Superset — stessa lettera = esercizi eseguiti insieme', ssButtons) : null,
-        labeled('Nota', noteInp),
-        seriesTable,
+        bodyBlock,
       ]);
     }
 

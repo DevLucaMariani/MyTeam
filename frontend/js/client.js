@@ -478,6 +478,7 @@
         const hasIntensity = inten.some((v) => v != null && v !== '');
         // Colonne prescritte mostrate al cliente: i "fondamentale" ne hanno di più.
         const isFond = ex.ex_type === 'fondamentale';
+        const isCardio = ex.ex_type === 'cardio';
         const prescr = [{ label: 'Rip.', arr: reps, suffix: ' rip.' }];
         if (isFond) {
           prescr.push({ label: 'RPE/RIR', arr: inten });
@@ -492,7 +493,10 @@
         [
           Number(ex.unilateral) ? el('div', { class: 'meta', html: '↔️ <strong>Monolaterale</strong> — esegui le serie su un lato, poi ripeti sull\'altro' }) : null,
           ex.media_url ? el('div', { style: 'margin:4px 0' }, window.UI.exerciseMedia(ex.media_url)) : null,
-          (ex.suggested_weight || ex.rest)
+          isCardio && ex.cardio_mode ? el('div', { class: 'meta', text: '🏃 ' + ex.cardio_mode }) : null,
+          isCardio && ex.cardio_duration ? el('div', { class: 'meta', text: '⏱ ' + ex.cardio_duration }) : null,
+          isCardio && ex.cardio_intensity ? el('div', { class: 'meta', text: '🔥 ' + ex.cardio_intensity }) : null,
+          (!isCardio && (ex.suggested_weight || ex.rest))
             ? el('div', { class: 'meta', text: (ex.suggested_weight ? 'peso sugg. ' + ex.suggested_weight : '') + (ex.rest ? ' · rec ' + ex.rest : '') })
             : null,
           ex.notes ? el('div', { class: 'meta', text: '📝 ' + ex.notes }) : null,
@@ -505,35 +509,50 @@
           doneBadge.textContent = on + '/' + ex.num_series;
           doneBadge.style.color = (ex.num_series && on >= ex.num_series) ? 'var(--indigo)' : 'var(--ink-3)';
         };
-        const tbody = el('tbody', {});
-        for (let s = 1; s <= ex.num_series; s += 1) {
-          const lg = byKey[`${ex.id}_${s}`] || {};
-          const wInput = el('input', { value: lg.actual_weight || '', placeholder: ex.suggested_weight || 'kg', inputmode: 'text' });
+        if (isCardio) {
+          // Cardio: niente serie/peso. Un solo pulsante "Fatto".
+          const lg = byKey[`${ex.id}_1`] || {};
           const check = el('div', { class: 'check' + (Number(lg.completed) ? ' on' : ''), html: '✓' });
-          const seriesIndex = s;
-          const save = async (completed) => {
-            try {
-              await API.saveLog({ planId: plan.id, exerciseId: ex.id, week: curWeek, seriesIndex,
-                actualWeight: wInput.value, completed });
-            } catch (err) { toast('Salvataggio non riuscito', 'err'); }
-          };
-          // Inserire un peso equivale a dichiarare la serie svolta: spunta in automatico.
-          wInput.addEventListener('change', () => {
-            if (wInput.value.trim() && !check.classList.contains('on')) check.classList.add('on');
-            save(check.classList.contains('on')); updateDoneBadge();
+          check.addEventListener('click', async () => {
+            check.classList.toggle('on');
+            try { await API.saveLog({ planId: plan.id, exerciseId: ex.id, week: curWeek, seriesIndex: 1, actualWeight: '', completed: check.classList.contains('on') }); }
+            catch (err) { toast('Salvataggio non riuscito', 'err'); }
+            updateDoneBadge();
           });
-          check.addEventListener('click', () => { check.classList.toggle('on'); save(check.classList.contains('on')); updateDoneBadge(); });
+          detail.appendChild(el('div', { style: 'display:flex; align-items:center; gap:10px; margin-top:8px' }, [
+            el('span', { text: 'Segna come completato', style: 'font-weight:600' }), check,
+          ]));
+        } else {
+          const tbody = el('tbody', {});
+          for (let s = 1; s <= ex.num_series; s += 1) {
+            const lg = byKey[`${ex.id}_${s}`] || {};
+            const wInput = el('input', { value: lg.actual_weight || '', placeholder: ex.suggested_weight || 'kg', inputmode: 'text' });
+            const check = el('div', { class: 'check' + (Number(lg.completed) ? ' on' : ''), html: '✓' });
+            const seriesIndex = s;
+            const save = async (completed) => {
+              try {
+                await API.saveLog({ planId: plan.id, exerciseId: ex.id, week: curWeek, seriesIndex,
+                  actualWeight: wInput.value, completed });
+              } catch (err) { toast('Salvataggio non riuscito', 'err'); }
+            };
+            // Inserire un peso equivale a dichiarare la serie svolta: spunta in automatico.
+            wInput.addEventListener('change', () => {
+              if (wInput.value.trim() && !check.classList.contains('on')) check.classList.add('on');
+              save(check.classList.contains('on')); updateDoneBadge();
+            });
+            check.addEventListener('click', () => { check.classList.toggle('on'); save(check.classList.contains('on')); updateDoneBadge(); });
 
-          tbody.appendChild(el('tr', { class: 'serie-row' }, [el('td', { class: 'serie-n', text: 'Serie ' + s })]
-            .concat(prescr.map((p) => el('td', { class: 'serie-reps', text: (p.arr[s - 1] != null && p.arr[s - 1] !== '') ? (p.arr[s - 1] + (p.suffix || '')) : '—' })))
-            .concat([el('td', { class: 'serie-w' }, wInput), el('td', { class: 'serie-c' }, check)])));
+            tbody.appendChild(el('tr', { class: 'serie-row' }, [el('td', { class: 'serie-n', text: 'Serie ' + s })]
+              .concat(prescr.map((p) => el('td', { class: 'serie-reps', text: (p.arr[s - 1] != null && p.arr[s - 1] !== '') ? (p.arr[s - 1] + (p.suffix || '')) : '—' })))
+              .concat([el('td', { class: 'serie-w' }, wInput), el('td', { class: 'serie-c' }, check)])));
+          }
+          detail.appendChild(el('table', { class: 'serie-table' }, [
+            el('thead', {}, el('tr', {}, [el('th', { text: 'Serie' })]
+              .concat(prescr.map((p) => el('th', { text: p.label })))
+              .concat([el('th', { text: 'Peso' }), el('th', { text: 'Fatto' })]))),
+            tbody,
+          ]));
         }
-        detail.appendChild(el('table', { class: 'serie-table' }, [
-          el('thead', {}, el('tr', {}, [el('th', { text: 'Serie' })]
-            .concat(prescr.map((p) => el('th', { text: p.label })))
-            .concat([el('th', { text: 'Peso' }), el('th', { text: 'Fatto' })]))),
-          tbody,
-        ]));
         detail.appendChild(el('button', { class: 'btn btn-sm rest-btn', html: '⏱ Recupero', onClick: () => startRest(parseRest(ex.rest)) }));
 
         // Intestazione compatta cliccabile: nome + riepilogo + completamento + freccia.
@@ -546,7 +565,9 @@
               el('span', { class: 'name', text: ex.name, style: 'font-weight:700' }),
               ex.ex_type ? el('span', { text: EX_TYPE_LABELS[ex.ex_type] || ex.ex_type, style: 'font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; background:' + tcol + '22; color:' + tcol }) : null,
             ]),
-            el('div', { class: 'muted', text: ex.num_series + ' serie' + (repsSummary ? ' · ' + repsSummary + ' rip.' : ''), style: 'font-size:12px' }),
+            el('div', { class: 'muted', text: isCardio
+              ? ([ex.cardio_mode, ex.cardio_duration].filter(Boolean).join(' · ') || 'Cardio')
+              : (ex.num_series + ' serie' + (repsSummary ? ' · ' + repsSummary + ' rip.' : '')), style: 'font-size:12px' }),
           ]),
           Number(ex.unilateral) ? el('span', { text: '↔️', title: 'Monolaterale' }) : null,
           doneBadge, chevron,

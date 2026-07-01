@@ -197,6 +197,10 @@ ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS unilateral TINYINT(1) NOT NU
 ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS ex_type VARCHAR(24);
 ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS deload_scheme LONGTEXT;
 ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS backoff_scheme LONGTEXT;
+-- Esercizi Cardio (niente serie/peso): modalita'/attrezzo, tempo e intensita'.
+ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS cardio_mode VARCHAR(40);
+ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS cardio_duration VARCHAR(40);
+ALTER TABLE plan_exercises ADD COLUMN IF NOT EXISTS cardio_intensity VARCHAR(60);
 
 -- Nutrizione: consigli alimentari (testo libero) e dieta giornaliera dettagliata
 -- (JSON: pasti con alimenti, grammi e macro). Entrambi a livello di scheda.

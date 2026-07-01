@@ -641,6 +641,7 @@ api.post('/plans/:id/duplicate', requireStaff, wrap(async (req, res) => {
         name: e.name, num_series: e.num_series, reps_scheme: e.reps_scheme, intensity_scheme: e.intensity_scheme,
         suggested_weight: e.suggested_weight, rest: e.rest, notes: e.notes, superset_group: e.superset_group,
         unilateral: e.unilateral, ex_type: e.ex_type, deload_scheme: e.deload_scheme, backoff_scheme: e.backoff_scheme,
+        cardio_mode: e.cardio_mode, cardio_duration: e.cardio_duration, cardio_intensity: e.cardio_intensity,
       })),
     })),
     nutrition: src.nutrition,
@@ -689,12 +690,13 @@ async function writeDaysAndNutrition(conn, planId, body) {
       const backoff = parseReps(e.backoff_scheme, numSeries);
       const exName = titleCaseName(e.name);
       await conn.query(
-        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme, superset_group, unilateral, ex_type, deload_scheme, backoff_scheme)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO plan_exercises (day_id, position, name, num_series, suggested_weight, rest, notes, reps_scheme, intensity_scheme, superset_group, unilateral, ex_type, deload_scheme, backoff_scheme, cardio_mode, cardio_duration, cardio_intensity)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [dayId, j, exName || 'Esercizio', numSeries,
           e.suggested_weight || null, e.rest || null, e.notes || null, JSON.stringify(scheme), JSON.stringify(intensity),
           (e.superset_group || '').trim() || null, e.unilateral ? 1 : 0,
-          (e.ex_type || '').trim() || null, JSON.stringify(deload), JSON.stringify(backoff)]
+          (e.ex_type || '').trim() || null, JSON.stringify(deload), JSON.stringify(backoff),
+          (e.cardio_mode || '').trim() || null, (e.cardio_duration || '').trim() || null, (e.cardio_intensity || '').trim() || null]
       );
       // Salva il nome nel catalogo se non gia' presente (anche se rinominato a mano),
       // con serie, ripetizioni e intensita' come default per i riutilizzi futuri.
